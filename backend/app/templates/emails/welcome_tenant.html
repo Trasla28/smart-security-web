@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block subject %}Bienvenido a Smart Security Tickets{% endblock %}
+
+{% block content %}
+<h2>Bienvenido, {{ admin_name }}</h2>
+
+<p>Tu empresa <strong>{{ tenant_name }}</strong> ha sido registrada exitosamente en el sistema de gestión de tickets.</p>
+
+<p>A continuación encontrarás tus credenciales de acceso como administrador:</p>
+
+<table style="width:100%; border-collapse:collapse; margin: 16px 0; background:#f8f9fa; border-radius:6px;">
+  <tr>
+    <td style="padding:10px 16px; font-weight:bold; color:#555; width:40%;">Usuario (email)</td>
+    <td style="padding:10px 16px; font-family:monospace;">{{ admin_email }}</td>
+  </tr>
+  <tr style="background:#f0f2f5;">
+    <td style="padding:10px 16px; font-weight:bold; color:#555;">Contraseña temporal</td>
+    <td style="padding:10px 16px; font-family:monospace;">{{ admin_password }}</td>
+  </tr>
+</table>
+
+<p style="color:#991b1b; font-size:13px;">⚠ Te recomendamos cambiar tu contraseña en el primer inicio de sesión.</p>
+
+<p>Con tu cuenta de administrador puedes:</p>
+<ul style="padding-left:20px; margin:0 0 16px;">
+  <li>Crear y gestionar usuarios de tu organización</li>
+  <li>Configurar áreas, categorías y SLAs según tus necesidades</li>
+  <li>Personalizar el sistema desde el panel de configuración</li>
+  <li>Ver reportes y métricas de tu equipo</li>
+</ul>
+
+<a href="{{ login_url }}" class="btn">Ingresar al sistema →</a>
+
+<p style="margin-top:24px; font-size:13px; color:#666;">
+  Si tienes dudas sobre cómo empezar, consulta la documentación de onboarding o contacta al equipo de soporte.
+</p>
+{% endblock %}

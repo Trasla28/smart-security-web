@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(BASE=\"D:/Santiago/Trabajo/Smart Security/Aplicativo Tickets\"\nmkdir -p \"$BASE/.github/workflows\"\nmkdir -p \"$BASE/backend/app/models\"\nmkdir -p \"$BASE/backend/app/schemas\"\nmkdir -p \"$BASE/backend/app/routers\"\nmkdir -p \"$BASE/backend/app/services\"\nmkdir -p \"$BASE/backend/app/repositories\"\nmkdir -p \"$BASE/backend/app/middleware\"\nmkdir -p \"$BASE/backend/app/utils\"\nmkdir -p \"$BASE/backend/app/tasks\"\nmkdir -p \"$BASE/backend/migrations/versions\"\nmkdir -p \"$BASE/backend/scripts\"\nmkdir -p \"$BASE/backend/tests\"\nmkdir -p \"$BASE/frontend/src/app/\\(auth\\)/login\"\nmkdir -p \"$BASE/frontend/src/app/\\(dashboard\\)\"\nmkdir -p \"$BASE/frontend/src/lib\"\nmkdir -p \"$BASE/frontend/src/types\"\nmkdir -p \"$BASE/nginx\"\necho \"Directories created\")",
+      "Bash(cd \"D:\\\\Santiago\\\\Trabajo\\\\Smart Security\\\\Aplicativo Tickets\" && docker compose -f docker-compose.yml config 2>&1 | head -50)",
+      "Bash(cd \"D:\\\\Santiago\\\\Trabajo\\\\Smart Security\\\\Aplicativo Tickets\" && docker compose restart frontend beat 2>&1)",
+      "Bash(cd \"D:\\\\Santiago\\\\Trabajo\\\\Smart Security\\\\Aplicativo Tickets\" && docker compose up -d --build beat 2>&1)",
+      "Bash(cd \"D:\\\\Santiago\\\\Trabajo\\\\Smart Security\\\\Aplicativo Tickets\" && docker compose stop beat && docker compose rm -f beat && docker compose up -d beat 2>&1)",
+      "Bash(sleep 5 && cd \"D:\\\\Santiago\\\\Trabajo\\\\Smart Security\\\\Aplicativo Tickets\" && docker compose logs beat --tail=8 2>&1)",
+      "Bash(cd \"D:\\\\Santiago\\\\Trabajo\\\\Smart Security\\\\Aplicativo Tickets\" && docker compose ps 2>&1)",
+      "Bash(curl -s http://localhost:8000/health && echo \"\" && curl -s -o /dev/null -w \"Frontend HTTP status: %{http_code}\" http://localhost:3000)",
+      "Bash(cd:*)",
+      "Bash(python3:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(netstat:*)",
+      "Bash(tasklist:*)",
+      "Bash(docker ps:*)",
+      "Bash(curl:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker cp:*)",
+      "Bash(grep:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(make dev:*)",
+      "Bash(docker compose:*)",
+      "Bash(gh auth:*)"
+    ]
+  }
+}

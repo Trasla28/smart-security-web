@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block subject %}SLA incumplido — ticket vencido{% endblock %}
+{% block content %}
+  <h2><span class="badge badge-danger">SLA Incumplido</span></h2>
+  <p>{{ body }}</p>
+  {% if ticket_id %}
+    <p><strong>ID del ticket:</strong> {{ ticket_id }}</p>
+  {% endif %}
+  <p>El ticket ha superado el tiempo de resolución acordado. Se requiere atención urgente.</p>
+{% endblock %}

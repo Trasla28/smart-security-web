@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block subject %}Advertencia de SLA — ticket próximo a vencer{% endblock %}
+{% block content %}
+  <h2><span class="badge badge-warning">Advertencia SLA</span></h2>
+  <p>{{ body }}</p>
+  {% if ticket_id %}
+    <p><strong>ID del ticket:</strong> {{ ticket_id }}</p>
+  {% endif %}
+  <p>El ticket está próximo a superar el tiempo de resolución acordado. Por favor actúa de inmediato.</p>
+{% endblock %}

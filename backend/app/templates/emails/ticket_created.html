@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block subject %}Nuevo ticket creado{% endblock %}
+{% block content %}
+  <h2>Se ha creado un nuevo ticket</h2>
+  <p>{{ body }}</p>
+  {% if ticket_id %}
+    <p><strong>ID del ticket:</strong> {{ ticket_id }}</p>
+  {% endif %}
+  <p>Ingresa al sistema para ver los detalles y gestionar la solicitud.</p>
+{% endblock %}

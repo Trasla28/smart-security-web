@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block subject %}Reporte semanal de tickets{% endblock %}
+{% block content %}
+  <h2>Reporte semanal</h2>
+  <p>Aquí tienes el resumen de actividad de tickets de la semana.</p>
+  {% if summary %}
+    <table style="width:100%; border-collapse:collapse; margin-top:16px;">
+      <tr style="background:#f0f4f8;">
+        <th style="padding:8px 12px; text-align:left; font-size:13px;">Métrica</th>
+        <th style="padding:8px 12px; text-align:right; font-size:13px;">Valor</th>
+      </tr>
+      {% for key, value in summary.items() %}
+      <tr style="border-top:1px solid #e2e8f0;">
+        <td style="padding:8px 12px; font-size:13px;">{{ key }}</td>
+        <td style="padding:8px 12px; text-align:right; font-size:13px;">{{ value }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+{% endblock %}

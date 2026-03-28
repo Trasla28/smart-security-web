@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block subject %}Ticket resuelto{% endblock %}
+{% block content %}
+  <h2><span class="badge badge-success">Resuelto</span> Tu ticket ha sido resuelto</h2>
+  <p>{{ body }}</p>
+  {% if ticket_id %}
+    <p><strong>ID del ticket:</strong> {{ ticket_id }}</p>
+  {% endif %}
+  <p>Si el problema persiste, puedes reabrir el ticket desde el sistema.</p>
+{% endblock %}

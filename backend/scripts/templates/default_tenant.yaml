@@ -1,0 +1,64 @@
+# Plantilla de configuración inicial para nuevos tenants.
+# El script create_tenant.py lee este archivo para crear áreas, categorías y SLAs por defecto.
+# El administrador puede personalizar todo desde el panel de configuración después del onboarding.
+
+areas:
+  - name: "Soporte TI"
+    description: "Área de tecnología, soporte técnico y sistemas"
+  - name: "Recursos Humanos"
+    description: "Área de gestión humana, nómina y bienestar"
+  - name: "Administración"
+    description: "Área administrativa y contable"
+  - name: "Compras"
+    description: "Área de adquisiciones y proveedores"
+  - name: "Operaciones"
+    description: "Área operativa y logística"
+
+categories:
+  - name: "Soporte TI"
+    description: "Problemas con equipos, software o conectividad"
+    area: "Soporte TI"
+  - name: "Mantenimiento"
+    description: "Solicitudes de mantenimiento de equipos o instalaciones"
+    area: "Operaciones"
+  - name: "Nómina"
+    description: "Solicitudes relacionadas con pagos y nómina"
+    area: "Recursos Humanos"
+  - name: "Vacaciones y Permisos"
+    description: "Solicitudes de vacaciones, permisos o licencias"
+    area: "Recursos Humanos"
+  - name: "Compras"
+    description: "Solicitudes de adquisición de bienes o servicios"
+    area: "Compras"
+  - name: "Administración"
+    description: "Solicitudes administrativas y documentación"
+    area: "Administración"
+  - name: "General"
+    description: "Solicitudes que no aplican a otras categorías"
+    area: "Operaciones"
+
+slas:
+  - priority: "urgent"
+    response_hours: 1
+    resolution_hours: 4
+  - priority: "high"
+    response_hours: 4
+    resolution_hours: 8
+  - priority: "medium"
+    response_hours: 8
+    resolution_hours: 24
+  - priority: "low"
+    response_hours: 24
+    resolution_hours: 72
+
+tenant_config:
+  primary_color: "#1565C0"
+  auth_method: "local"
+  auto_close_days: 3
+  urgency_abuse_threshold: 50
+  timezone: "America/Bogota"
+  working_hours_start: "08:00"
+  working_hours_end: "18:00"
+  working_days: [1, 2, 3, 4, 5]
+  weekly_report_enabled: true
+  weekly_report_day: 1

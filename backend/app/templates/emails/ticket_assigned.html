@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block subject %}Ticket asignado{% endblock %}
+{% block content %}
+  <h2>Se te ha asignado un ticket</h2>
+  <p>{{ body }}</p>
+  {% if ticket_id %}
+    <p><strong>ID del ticket:</strong> {{ ticket_id }}</p>
+  {% endif %}
+  <p>Por favor revisa el ticket y toma las acciones necesarias.</p>
+{% endblock %}
