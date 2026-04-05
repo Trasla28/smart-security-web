@@ -23,6 +23,7 @@ export interface TicketFilters {
   area_id?: string;
   category_id?: string;
   assigned_to?: string;
+  requester_id?: string;
   sort_by?: string;
 }
 

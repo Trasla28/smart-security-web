@@ -130,8 +130,8 @@ export function CreateTicketForm() {
   const { data: areasData } = useQuery({
     queryKey: ["areas"],
     queryFn: async () => {
-      const res = await api.get<{ items: { id: string; name: string }[] }>("/areas");
-      return res.data.items ?? [];
+      const res = await api.get<{ id: string; name: string }[]>("/areas");
+      return res.data;
     },
   });
 

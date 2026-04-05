@@ -423,8 +423,9 @@ class TicketService:
             if area_id is not None and area_id not in agent_area_ids:
                 return {"items": [], "total": 0, "page": page, "pages": 0, "size": size}
             if area_id is None and not agent_area_ids:
-                # Agent has no area assignments: only show tickets directly assigned to them
-                tickets, total = await TicketRepository.get_list(
+                # Agent has no area assignments: show tickets directly assigned to them
+                # or tickets they created
+                assigned_ts, _ = await TicketRepository.get_list(
                     tenant_id,
                     db,
                     status=status_filter,
@@ -435,14 +436,40 @@ class TicketService:
                     requester_id=requester_id,
                     date_from=date_from,
                     date_to=date_to,
-                    sort_by=sort_by,
-                    page=page,
-                    size=size,
+                    page=1,
+                    size=10000,
                 )
-                pages = max(1, -(-total // size)) if total > 0 else 1
+                created_ts, _ = await TicketRepository.get_list(
+                    tenant_id,
+                    db,
+                    status=status_filter,
+                    priority=priority,
+                    area_id=None,
+                    category_id=category_id,
+                    assigned_to=assigned_to,
+                    requester_id=user.id,
+                    date_from=date_from,
+                    date_to=date_to,
+                    page=1,
+                    size=10000,
+                )
+                no_area_tickets: list[Ticket] = list(assigned_ts)
+                seen_no_area: set[uuid.UUID] = {t.id for t in no_area_tickets}
+                for t in created_ts:
+                    if t.id not in seen_no_area:
+                        no_area_tickets.append(t)
+                        seen_no_area.add(t.id)
+                PRIORITY_RANK_NO_AREA = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+                if sort_by == "priority":
+                    no_area_tickets.sort(key=lambda t: PRIORITY_RANK_NO_AREA.get(t.priority, 9))
+                else:
+                    no_area_tickets.sort(key=lambda t: t.created_at, reverse=True)
+                total_no_area = len(no_area_tickets)
+                start_no_area = (page - 1) * size
+                pages = max(1, -(-total_no_area // size)) if total_no_area > 0 else 1
                 return {
-                    "items": [_to_list_item(t) for t in tickets],
-                    "total": total,
+                    "items": [_to_list_item(t) for t in no_area_tickets[start_no_area : start_no_area + size]],
+                    "total": total_no_area,
                     "page": page,
                     "pages": pages,
                     "size": size,
@@ -484,6 +511,26 @@ class TicketService:
                 # Deduplicate by id
                 seen_ids: set[uuid.UUID] = {t.id for t in all_tickets}
                 for t in assigned_ts:
+                    if t.id not in seen_ids:
+                        all_tickets.append(t)
+                        seen_ids.add(t.id)
+
+                # Also include tickets the agent created (may be outside their areas)
+                created_by_agent_ts, _ = await TicketRepository.get_list(
+                    tenant_id,
+                    db,
+                    status=status_filter,
+                    priority=priority,
+                    area_id=None,
+                    category_id=category_id,
+                    assigned_to=assigned_to,
+                    requester_id=user.id,
+                    date_from=date_from,
+                    date_to=date_to,
+                    page=1,
+                    size=10000,
+                )
+                for t in created_by_agent_ts:
                     if t.id not in seen_ids:
                         all_tickets.append(t)
                         seen_ids.add(t.id)
@@ -634,6 +681,22 @@ class TicketService:
                 detail=f"Cannot transition from '{ticket.status}' to '{new_status}'",
             )
 
+        # --- Permission rules based purely on assignment ---
+        if new_status == "closed":
+            # Only the ticket creator can confirm resolution
+            if ticket.requester_id != user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Solo el solicitante del ticket puede confirmar su resolución",
+                )
+        else:
+            # Only the assigned user can drive the workflow, regardless of role
+            if ticket.assigned_to != user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Solo el usuario asignado al ticket puede cambiar su estado",
+                )
+
         now = datetime.now(timezone.utc)
         update_data: dict[str, Any] = {"status": new_status}
 
@@ -706,15 +769,33 @@ class TicketService:
         Raises:
             HTTPException 422: If the agent does not exist or is archived/inactive.
         """
-        if user.role not in ("supervisor", "admin"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only supervisors and admins can assign tickets",
-            )
-
         ticket = await TicketRepository.get_by_id(ticket_id, tenant_id, db)
         if ticket is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+
+        if user.role == "admin":
+            pass  # admins can assign any ticket
+        elif user.role == "supervisor":
+            # Supervisor can only assign/reassign tickets in areas they belong to
+            if ticket.area_id:
+                member_result = await db.execute(
+                    select(UserArea).where(
+                        and_(
+                            UserArea.user_id == user.id,
+                            UserArea.area_id == ticket.area_id,
+                        )
+                    )
+                )
+                if member_result.scalar_one_or_none() is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Supervisors can only assign tickets within their own areas",
+                    )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admins and supervisors of the ticket's area can assign tickets",
+            )
 
         # Validate agent
         agent_result = await db.execute(

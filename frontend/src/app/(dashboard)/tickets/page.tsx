@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTicketList } from "@/hooks/useTickets";
 import { TicketTable } from "@/components/tickets/TicketTable";
 import Link from "next/link";
-import { Plus, ChevronLeft, ChevronRight, UserCircle } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, UserCircle, FileText } from "lucide-react";
 import api from "@/lib/api";
 
 const STATUSES = [
@@ -50,11 +50,12 @@ function TicketListContent() {
   const status = searchParams.get("status") ?? "";
   const priority = searchParams.get("priority") ?? "";
   const assigned_to = searchParams.get("assigned_to") ?? "";
+  const requester_id = searchParams.get("requester_id") ?? "";
   const sort_by = searchParams.get("sort_by") ?? "created_at";
   const page = Number(searchParams.get("page") ?? "1");
   const size = 20;
 
-  const { data, isLoading } = useTicketList({ status, priority, assigned_to, sort_by, page, size });
+  const { data, isLoading } = useTicketList({ status, priority, assigned_to, requester_id, sort_by, page, size });
 
   // Fetch agents/users for the assignee filter (only for admins/supervisors)
   const { data: usersData = [] } = useQuery<UserOption[]>({
@@ -85,6 +86,15 @@ function TicketListContent() {
   function setMyTickets() {
     const params = new URLSearchParams(searchParams.toString());
     params.set("assigned_to", currentUserId);
+    params.delete("requester_id");
+    params.delete("page");
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
+  function setMyRequests() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("requester_id", currentUserId);
+    params.delete("assigned_to");
     params.delete("page");
     router.push(`${pathname}?${params.toString()}`);
   }
@@ -93,8 +103,9 @@ function TicketListContent() {
     router.push(pathname);
   }
 
-  const hasActiveFilters = status || priority || assigned_to || sort_by !== "created_at";
+  const hasActiveFilters = status || priority || assigned_to || requester_id || sort_by !== "created_at";
   const isMyTickets = assigned_to === currentUserId;
+  const isMyRequests = requester_id === currentUserId;
 
   return (
     <>
@@ -102,26 +113,40 @@ function TicketListContent() {
         <p className="text-sm text-gray-500 mt-0.5">
           {data.total} ticket{data.total !== 1 ? "s" : ""} encontrado{data.total !== 1 ? "s" : ""}
           {isMyTickets && <span className="ml-2 text-xs bg-[#1a2c4e] text-white px-2 py-0.5 rounded-full">Mis tickets</span>}
+          {isMyRequests && <span className="ml-2 text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">Reportados</span>}
         </p>
       )}
 
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         {/* Filters */}
         <div className="flex flex-wrap gap-3 mb-5 items-end">
-          {/* Quick filter: Mis tickets */}
+          {/* Quick filters */}
           <div className="flex flex-col gap-1">
             <label className="text-xs text-gray-500">Acceso rápido</label>
-            <button
-              onClick={isMyTickets ? clearFilters : setMyTickets}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                isMyTickets
-                  ? "bg-[#1a2c4e] text-white border-[#1a2c4e]"
-                  : "bg-white text-gray-700 border-gray-200 hover:border-[#1a2c4e] hover:text-[#1a2c4e]"
-              }`}
-            >
-              <UserCircle className="w-4 h-4" />
-              Mis tickets
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={isMyTickets ? clearFilters : setMyTickets}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                  isMyTickets
+                    ? "bg-[#1a2c4e] text-white border-[#1a2c4e]"
+                    : "bg-white text-gray-700 border-gray-200 hover:border-[#1a2c4e] hover:text-[#1a2c4e]"
+                }`}
+              >
+                <UserCircle className="w-4 h-4" />
+                Mis tickets
+              </button>
+              <button
+                onClick={isMyRequests ? clearFilters : setMyRequests}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                  isMyRequests
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white text-gray-700 border-gray-200 hover:border-blue-500 hover:text-blue-600"
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                Reportados
+              </button>
+            </div>
           </div>
 
           {/* Estado */}

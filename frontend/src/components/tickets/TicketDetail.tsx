@@ -75,8 +75,9 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
     );
   }
 
-  const canAct = role !== "requester";
-  const canConfirmOrReopen = session?.user?.id === ticket.requester_id;
+  const userId = session?.user?.id;
+  const canManageWorkflow = !!userId && userId === ticket.assigned_to;
+  const canConfirmOrReopen = !!userId && userId === ticket.requester_id;
   const status = ticket.status as TicketStatus;
 
   async function handleStatusChange(newStatus: string) {
@@ -162,8 +163,8 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
 
           {/* Action buttons */}
           <div className="flex flex-wrap gap-2">
-            {/* Agente / supervisor / admin: mover ticket en proceso y resolver */}
-            {canAct && (status === "open" || status === "pending") && (
+            {/* Agente asignado / supervisor / admin: mover ticket en proceso y resolver */}
+            {canManageWorkflow && (status === "open" || status === "pending") && (
               <button
                 onClick={() => handleStatusChange("in_progress")}
                 disabled={changeStatus.isPending}
@@ -172,7 +173,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                 En Proceso
               </button>
             )}
-            {canAct && (status === "in_progress" || status === "escalated") && (
+            {canManageWorkflow && (status === "in_progress" || status === "escalated") && (
               <button
                 onClick={() => resolveTicket.mutate()}
                 disabled={resolveTicket.isPending}

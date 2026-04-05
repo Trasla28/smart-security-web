@@ -2,13 +2,15 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import TenantId, require_role
 from app.models.area import Area, UserArea
 from app.models.user import User
+from app.models.category import Category
+from app.models.ticket import Ticket
 from app.schemas.admin import AreaCreate, AreaMemberAdd, AreaMemberResponse, AreaResponse, AreaUpdate
 
 router = APIRouter()
@@ -120,6 +122,51 @@ async def update_area(
     await db.commit()
     await db.refresh(area)
     return AreaResponse.model_validate(area)
+
+
+@router.delete(
+    "/{area_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_role("admin"))],
+)
+async def delete_area(
+    area_id: uuid.UUID,
+    tenant_id: TenantId,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Permanently delete an area and all its team memberships.
+
+    Tickets and categories that referenced this area will have their
+    area_id / default_area_id set to NULL.
+
+    Raises:
+        HTTPException 404: If the area does not exist.
+    """
+    area = await _get_area_or_404(area_id, tenant_id, db)
+
+    # Remove all team memberships
+    members = await db.execute(select(UserArea).where(UserArea.area_id == area_id))
+    for ua in members.scalars().all():
+        await db.delete(ua)
+
+    # Detach tickets that belong to this area
+    await db.execute(
+        sa_update(Ticket)
+        .where(Ticket.tenant_id == tenant_id)
+        .where(Ticket.area_id == area_id)
+        .values(area_id=None)
+    )
+
+    # Detach categories that route to this area
+    await db.execute(
+        sa_update(Category)
+        .where(Category.tenant_id == tenant_id)
+        .where(Category.default_area_id == area_id)
+        .values(default_area_id=None)
+    )
+
+    await db.delete(area)
+    await db.commit()
 
 
 @router.get("/{area_id}/members", response_model=list[AreaMemberResponse])
