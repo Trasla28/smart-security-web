@@ -110,8 +110,25 @@ async def list_users(
     items = result.scalars().all()
     pages = max(1, -(-total // size)) if total > 0 else 1
 
+    # Fetch primary areas for returned users
+    user_ids = [u.id for u in items]
+    primary_ua_result = await db.execute(
+        select(UserArea).where(
+            and_(UserArea.user_id.in_(user_ids), UserArea.is_primary.is_(True))
+        )
+    )
+    primary_area_map: dict[uuid.UUID, uuid.UUID] = {
+        ua.user_id: ua.area_id for ua in primary_ua_result.scalars().all()
+    }
+
+    responses = []
+    for u in items:
+        r = UserResponse.model_validate(u)
+        r.primary_area_id = primary_area_map.get(u.id)
+        responses.append(r)
+
     return {
-        "items": [UserResponse.model_validate(u) for u in items],
+        "items": responses,
         "total": total,
         "page": page,
         "pages": pages,
@@ -223,9 +240,10 @@ async def archive_user(
         HTTPException 400: If trying to archive yourself.
         HTTPException 409: If the user is already archived.
     """
-    from sqlalchemy import update as sa_update
-
+    from app.models.area import Area, UserArea
     from app.models.ticket import Ticket
+    from app.repositories.ticket_repository import TicketRepository
+    from app.services.notification_service import NotificationService
 
     user = await _get_user_or_404(user_id, tenant_id, db)
 
@@ -238,14 +256,64 @@ async def archive_user(
     user.is_archived = True
     user.is_active = False
 
-    # Unassign open tickets belonging to this user
-    await db.execute(
-        sa_update(Ticket)
+    # Reassign open tickets to the area supervisor
+    tickets_result = await db.execute(
+        select(Ticket)
         .where(Ticket.tenant_id == tenant_id)
         .where(Ticket.assigned_to == user_id)
         .where(Ticket.status.not_in(["resolved", "closed"]))
-        .values(assigned_to=None)
     )
+    open_tickets = tickets_result.scalars().all()
+
+    for ticket in open_tickets:
+        new_assignee_id: uuid.UUID | None = None
+
+        if ticket.area_id:
+            area_result = await db.execute(select(Area).where(Area.id == ticket.area_id))
+            area_obj = area_result.scalar_one_or_none()
+            if area_obj and area_obj.manager_id:
+                new_assignee_id = area_obj.manager_id
+            else:
+                # Fallback: first active supervisor in the area
+                sup_result = await db.execute(
+                    select(User)
+                    .join(UserArea, UserArea.user_id == User.id)
+                    .where(UserArea.area_id == ticket.area_id)
+                    .where(User.role == "supervisor")
+                    .where(User.tenant_id == tenant_id)
+                    .where(User.deleted_at.is_(None))
+                    .where(User.is_active.is_(True))
+                    .where(User.is_archived.is_(False))
+                    .limit(1)
+                )
+                supervisor = sup_result.scalar_one_or_none()
+                if supervisor:
+                    new_assignee_id = supervisor.id
+
+        ticket.assigned_to = new_assignee_id
+
+        await TicketRepository.add_history(
+            ticket_id=ticket.id,
+            tenant_id=tenant_id,
+            actor_id=None,
+            action="assigned",
+            old_value={"assigned_to": str(user_id), "reason": "agent_archived"},
+            new_value={"assigned_to": str(new_assignee_id) if new_assignee_id else None},
+            db=db,
+        )
+
+        if new_assignee_id:
+            await NotificationService.create_and_send(
+                user_id=new_assignee_id,
+                tenant_id=tenant_id,
+                notification_type="ticket_assigned",
+                title=f"Ticket reasignado: {ticket.title}",
+                db=db,
+                ticket_id=ticket.id,
+                body=f"El agente {user.full_name} fue archivado. El ticket #{ticket.ticket_number} fue asignado a ti para que lo reasignes.",
+            )
+
+    await db.flush()
 
     # Revoke Redis refresh tokens (best-effort)
     try:

@@ -112,16 +112,49 @@ async def get_agent_performance(
     """Return per-agent metrics: volume, resolution time and SLA compliance.
 
     Only supervisors and admins can access this endpoint.
+    Supervisors see only agents from their own areas.
 
     Args:
         days: Look-back window in days.
     """
+    from sqlalchemy import select as sa_select
+
+    from app.models.area import UserArea
+
     if current_user.role not in ("admin", "supervisor"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Agent performance report is only available to supervisors and admins",
         )
-    rows = await DashboardRepository.get_agent_performance(tenant_id, db, date_range_days=days)
+
+    area_ids = None
+    if current_user.role == "supervisor":
+        from app.models.area import Area
+
+        # Areas where the supervisor is a member
+        ua_result = await db.execute(
+            sa_select(UserArea.area_id).where(UserArea.user_id == current_user.id)
+        )
+        member_area_ids: set[uuid.UUID] = set(ua_result.scalars().all())
+
+        # Areas where the supervisor is the manager
+        mgr_result = await db.execute(
+            sa_select(Area.id).where(
+                Area.tenant_id == tenant_id,
+                Area.manager_id == current_user.id,
+                Area.is_active.is_(True),
+            )
+        )
+        manager_area_ids: set[uuid.UUID] = set(mgr_result.scalars().all())
+
+        area_ids = list(member_area_ids | manager_area_ids)
+        if not area_ids:
+            # Supervisor has no areas at all — return empty list
+            return []
+
+    rows = await DashboardRepository.get_agent_performance(
+        tenant_id, db, date_range_days=days, area_ids=area_ids
+    )
     return [AgentPerformanceItem(**row) for row in rows]
 
 

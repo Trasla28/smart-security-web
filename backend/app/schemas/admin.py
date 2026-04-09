@@ -41,6 +41,7 @@ class UserResponse(BaseModel):
     last_login_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    primary_area_id: uuid.UUID | None = None
 
 
 # ---------------------------------------------------------------------------

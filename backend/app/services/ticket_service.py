@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.area import UserArea
+from app.models.area import Area, UserArea
 from app.models.ticket import Ticket
 from app.models.user import User
 from app.models.sla import SLA
@@ -284,6 +284,27 @@ class TicketService:
             if assigned_to is None and category.default_agent_id is not None:
                 assigned_to = category.default_agent_id
 
+        # If agent assigned but no area: auto-fill from agent's primary area
+        if assigned_to is not None and area_id is None:
+            primary_ua_result = await db.execute(
+                select(UserArea).where(
+                    and_(
+                        UserArea.user_id == assigned_to,
+                        UserArea.is_primary.is_(True),
+                    )
+                )
+            )
+            primary_ua = primary_ua_result.scalar_one_or_none()
+            if primary_ua is not None:
+                area_id = primary_ua.area_id
+
+        # Validate: without an agent, area is required so supervisors can manage the ticket
+        if assigned_to is None and area_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Debe asignar un área o un agente al ticket",
+            )
+
         ticket_data: dict[str, Any] = {
             "title": data.title,
             "description": data.description,
@@ -333,6 +354,37 @@ class TicketService:
                 ticket_id=ticket.id,
                 body=f"Se te ha asignado el ticket #{ticket.ticket_number}.",
             )
+        elif ticket.area_id:
+            # No agent assigned — notify the area supervisor so they can assign it
+            area_result = await db.execute(
+                select(Area).where(Area.id == ticket.area_id)
+            )
+            area_obj = area_result.scalar_one_or_none()
+            supervisor_ids: set[uuid.UUID] = set()
+            if area_obj and area_obj.manager_id:
+                supervisor_ids.add(area_obj.manager_id)
+            else:
+                # Fallback: notify all supervisors who are members of the area
+                sup_result = await db.execute(
+                    select(User)
+                    .join(UserArea, UserArea.user_id == User.id)
+                    .where(UserArea.area_id == ticket.area_id)
+                    .where(User.role == "supervisor")
+                    .where(User.deleted_at.is_(None))
+                )
+                for sup in sup_result.scalars().all():
+                    supervisor_ids.add(sup.id)
+            supervisor_ids.discard(requester_id)
+            for uid in supervisor_ids:
+                await NotificationService.create_and_send(
+                    user_id=uid,
+                    tenant_id=tenant_id,
+                    notification_type="ticket_assigned",
+                    title=f"Ticket sin asignar: {ticket.title}",
+                    db=db,
+                    ticket_id=ticket.id,
+                    body=f"El ticket #{ticket.ticket_number} fue creado en tu área sin agente asignado. Por favor asígnalo.",
+                )
 
         # Notify mentioned users
         if data.notify_user_ids:
@@ -776,21 +828,27 @@ class TicketService:
         if user.role == "admin":
             pass  # admins can assign any ticket
         elif user.role == "supervisor":
-            # Supervisor can only assign/reassign tickets in areas they belong to
+            # Supervisor can assign if they are the area manager OR a member of the area
             if ticket.area_id:
-                member_result = await db.execute(
-                    select(UserArea).where(
-                        and_(
-                            UserArea.user_id == user.id,
-                            UserArea.area_id == ticket.area_id,
+                area_chk = await db.execute(
+                    select(Area).where(Area.id == ticket.area_id)
+                )
+                area_obj = area_chk.scalar_one_or_none()
+                is_manager = area_obj is not None and area_obj.manager_id == user.id
+                if not is_manager:
+                    member_result = await db.execute(
+                        select(UserArea).where(
+                            and_(
+                                UserArea.user_id == user.id,
+                                UserArea.area_id == ticket.area_id,
+                            )
                         )
                     )
-                )
-                if member_result.scalar_one_or_none() is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Supervisors can only assign tickets within their own areas",
-                    )
+                    if member_result.scalar_one_or_none() is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Supervisors can only assign tickets within their own areas",
+                        )
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

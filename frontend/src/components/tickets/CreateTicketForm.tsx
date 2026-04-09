@@ -21,7 +21,7 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-interface UserOption { id: string; full_name: string; email: string; role: string }
+interface UserOption { id: string; full_name: string; email: string; role: string; primary_area_id?: string | null }
 
 const ACCEPTED_TYPES = ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp";
 const MAX_SIZE_MB = 10;
@@ -151,10 +151,13 @@ export function CreateTicketForm() {
     },
   });
 
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { priority: "medium" },
   });
+
+  const watchedAreaId = watch("area_id");
+  const [areaError, setAreaError] = useState<string | null>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     setFileError(null);
@@ -179,6 +182,11 @@ export function CreateTicketForm() {
   }
 
   async function onSubmit(data: FormData) {
+    if (!assignedTo && !data.area_id) {
+      setAreaError("El área es obligatoria cuando no se asigna un agente");
+      return;
+    }
+    setAreaError(null);
     try {
       const result = await createTicket.mutateAsync({
         title: data.title,
@@ -214,9 +222,15 @@ export function CreateTicketForm() {
       {/* Asignar a — antes del título */}
       <UserPicker
         label="Asignar a"
-        hint="Persona responsable de atender este ticket. Si se deja vacío se aplica la asignación automática por categoría."
+        hint="Persona responsable de atender este ticket. Si se deja vacío, el área es obligatoria para que el supervisor pueda reasignarlo."
         value={assignedTo}
-        onChange={(u) => setAssignedTo((prev) => prev?.id === u.id ? null : u)}
+        onChange={(u) => {
+          const isRemoving = assignedTo?.id === u.id;
+          setAssignedTo(isRemoving ? null : u);
+          if (!isRemoving && u.primary_area_id && !watchedAreaId) {
+            setValue("area_id", u.primary_area_id);
+          }
+        }}
         multi={false}
         users={usersData}
       />
@@ -261,13 +275,23 @@ export function CreateTicketForm() {
           </select>
         </div>
         <div>
-          <label className={labelClass}>Área</label>
-          <select {...register("area_id")} className={inputClass}>
+          <label className={labelClass}>
+            Área {!assignedTo && <span className="text-red-500">*</span>}
+          </label>
+          <select
+            {...register("area_id")}
+            className={cn(inputClass, areaError ? "border-red-500" : "")}
+            onChange={(e) => { register("area_id").onChange(e); setAreaError(null); }}
+          >
             <option value="">Sin área</option>
             {areasData?.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </select>
+          {areaError && <p className={errorClass}>{areaError}</p>}
+          {assignedTo?.primary_area_id && !watchedAreaId && (
+            <p className="text-xs text-blue-600 mt-1">Se asignará el área del agente automáticamente.</p>
+          )}
         </div>
       </div>
 

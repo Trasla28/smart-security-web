@@ -138,6 +138,7 @@ Cada tenant puede configurar sin tocar código:
 - Correo al solicitante cuando: ticket creado, estado cambia, ticket resuelto
 - Correo al agente cuando: ticket asignado, comentario nuevo, ticket escalado
 - Correo configurable por tenant (plantillas HTML personalizables)
+- **Envío diferido fuera de horario laboral**: si la notificación se genera fuera del horario hábil del tenant, el correo se programa para enviarse al inicio del próximo día hábil. La notificación en la app se entrega de todas formas en tiempo real.
 
 ### RF-07 — SLAs (Acuerdos de Nivel de Servicio)
 - Definir tiempo máximo de resolución por categoría y/o prioridad
@@ -647,8 +648,16 @@ CREATE TABLE notifications (
     body            TEXT,
     is_read         BOOLEAN DEFAULT false,
     read_at         TIMESTAMPTZ,
+    -- Envío diferido (correos fuera de horario hábil)
+    scheduled_for   TIMESTAMPTZ,    -- NULL = enviar de inmediato; NON-NULL = enviar a esta hora
+    email_sent_at   TIMESTAMPTZ,    -- NULL = aún no enviado
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Índice parcial para consulta eficiente de emails pendientes
+CREATE INDEX ix_notifications_scheduled_for
+    ON notifications(scheduled_for)
+    WHERE scheduled_for IS NOT NULL AND email_sent_at IS NULL;
 ```
 
 ### Índices críticos
@@ -807,8 +816,10 @@ backend/
 │   ├── tasks/                  # Tareas Celery
 │   │   ├── celery_app.py
 │   │   ├── email_tasks.py
+│   │   ├── notification_tasks.py  # send_scheduled_notifications (cada 5 min)
 │   │   ├── recurring_tasks.py
-│   │   └── report_tasks.py
+│   │   ├── report_tasks.py
+│   │   └── sla_tasks.py
 │   └── utils/
 │       ├── security.py         # JWT, hashing
 │       ├── email.py            # Envío de correos
@@ -1466,10 +1477,10 @@ crontab -e
 **Objetivo:** Implementar el cálculo de SLAs con tiempo en horas hábiles, alertas y seguimiento de cumplimiento.
 
 **Acciones:**
-1. Crear `app/utils/business_hours.py` con función `calculate_due_date(start_datetime, hours, tenant_config)` que:
-   - Recibe una fecha de inicio, cantidad de horas hábiles y la config del tenant (horario laboral, días hábiles, festivos).
-   - Calcula correctamente cuándo se vencen esas horas excluyendo fines de semana y días fuera del horario laboral.
-   - Ejemplo: 8 horas hábiles desde viernes 4pm → lunes 12pm.
+1. Crear `app/utils/business_hours.py` con las siguientes funciones:
+   - `calculate_due_date(start_datetime, hours, tenant_config)`: recibe fecha de inicio, horas hábiles y config del tenant. Calcula la fecha de vencimiento excluyendo fines de semana y días fuera del horario laboral. Ejemplo: 8 horas hábiles desde viernes 4pm → lunes 12pm.
+   - `is_within_business_hours(now, timezone_str, working_days, working_hours_start, working_hours_end)`: retorna `True` si `now` cae dentro del horario hábil configurado del tenant.
+   - `next_business_start(now, timezone_str, working_days, working_hours_start, working_hours_end)`: retorna el próximo inicio de jornada hábil en UTC, para programar envíos diferidos.
 2. En `ticket_service.create_ticket`: después de crear el ticket, buscar el SLA aplicable (por categoría y prioridad, usando el más específico disponible). Si existe, calcular `sla_due_at` usando `calculate_due_date`.
 3. Crear tarea Celery `tasks/sla_tasks.py`:
    - `check_sla_warnings`: se ejecuta cada 30 minutos. Busca tickets donde `sla_due_at` está entre ahora y las próximas 2 horas y `sla_breached=false`. Para cada uno: enviar notificación de advertencia al agente y supervisor del área.
@@ -1493,13 +1504,14 @@ crontab -e
 1. Crear `app/services/notification_service.py` con método `create_and_send(user_id, tenant_id, type, ticket_id, title, body)` que:
    - Guarda la notificación en la tabla `notifications`.
    - Publica el evento en Redis pub/sub en el canal `notifications:{user_id}`.
-   - Si el tipo de notificación lo requiere, encola tarea de envío de correo.
+   - **Lógica de horario hábil**: si el tipo requiere correo, verifica si `now` cae dentro del horario laboral del tenant usando `is_within_business_hours`. Si sí → encola el correo de inmediato y setea `email_sent_at`. Si no → guarda `scheduled_for = next_business_start(...)` y deja `email_sent_at = null` para que la tarea `send_scheduled_notifications` lo procese.
 2. Crear endpoint WebSocket `GET /notifications/ws` en FastAPI. Al conectarse, el cliente se suscribe al canal de Redis de su `user_id`. Cuando llega un mensaje, lo retransmite al cliente WebSocket. Manejar correctamente la desconexión y reconexión.
 3. Crear `app/utils/email.py` con función `send_email(to, subject, template_name, context)` usando `smtplib` o `aiosmtplib`. Las plantillas HTML de correo se almacenan en `app/templates/emails/` como archivos Jinja2.
 4. Crear plantillas de correo para: ticket creado, ticket asignado, estado cambiado, comentario nuevo, SLA warning, SLA breach, ticket resuelto, reporte semanal.
 5. Crear tarea Celery `tasks/email_tasks.py: send_notification_email(to, subject, template, context)`.
-6. En el frontend, crear `hooks/useWebSocket.ts` que se conecta al endpoint WS, maneja reconexión automática con backoff exponencial, y actualiza el store de notificaciones (Zustand) cuando llega un mensaje nuevo.
-7. Crear componente `NotificationBell.tsx` con badge de contador de no leídas, dropdown con listado y botón "marcar todas como leídas".
+6. Crear tarea Celery `tasks/notification_tasks.py: send_scheduled_notifications()` que se ejecuta cada 5 minutos. Busca notificaciones donde `scheduled_for <= NOW()` y `email_sent_at IS NULL`, encola el correo correspondiente y actualiza `email_sent_at`. Reintentos automáticos x3.
+7. En el frontend, crear `hooks/useWebSocket.ts` que se conecta al endpoint WS, maneja reconexión automática con backoff exponencial, y actualiza el store de notificaciones (Zustand) cuando llega un mensaje nuevo.
+8. Crear componente `NotificationBell.tsx` con badge de contador de no leídas, dropdown con listado y botón "marcar todas como leídas".
 
 **Criterio de aceptación:** Test de que al cambiar el estado de un ticket, el agente asignado recibe notificación en tiempo real. Test de que el correo se encola cuando corresponde según la config del tenant.
 
@@ -1540,7 +1552,7 @@ crontab -e
    - `get_summary(tenant_id, date_range)`: retorna counts por estado, tiempo promedio de resolución, tickets nuevos hoy.
    - `get_tickets_by_area(tenant_id, date_range)`: agrupación por área con counts.
    - `get_sla_compliance(tenant_id, date_range)`: porcentaje de tickets resueltos dentro del SLA.
-   - `get_agent_performance(tenant_id, date_range)`: métricas por agente.
+   - `get_agent_performance(tenant_id, date_range, area_ids=None)`: métricas por agente. Si `area_ids` no es `None`, filtra solo los agentes que pertenecen a esas áreas. Los supervisores reciben solo las áreas donde son miembros o managers.
    - `get_urgency_abuse_report(tenant_id, date_range)`: porcentaje de tickets urgentes por usuario, comparado con período anterior. Solo retorna datos si el usuario que consulta tiene `id` igual a `tenant_config.urgency_report_visible_to`.
 3. Crear tarea Celery `tasks/report_tasks.py: send_weekly_report(tenant_id)` que:
    - Obtiene métricas de la semana anterior.
@@ -1563,7 +1575,7 @@ crontab -e
 4. Gestión de categorías: CRUD con configuración de enrutamiento (área destino, agente por defecto, si requiere aprobación).
 5. Gestión de SLAs: CRUD. Validar que no haya SLAs duplicados para misma categoría + prioridad.
 6. Configuración del tenant: endpoint `PATCH /admin/config` que permite actualizar cualquier campo de `tenant_configs`. Invalidar caché de Redis al actualizar.
-7. Al archivar un usuario: reasignar sus tickets abiertos a null (quedan sin asignar) o al responsable del área (configurable).
+7. Al archivar un usuario: sus tickets abiertos se reasignan automáticamente con la siguiente prioridad: (1) `manager_id` del área del ticket, (2) primer supervisor activo del área. Solo si no existe ninguno queda sin asignar (`null`). En todos los casos se registra en `ticket_history` con `action="assigned"` y `reason="agent_archived"`, y se notifica al nuevo asignado. La lista `GET /users` incluye `primary_area_id` en cada usuario.
 
 **Criterio de aceptación:** Test de que un usuario archivado no puede hacer login. Test de que sus tickets quedan reasignados correctamente. Test de que la caché se invalida al cambiar la configuración.
 
@@ -1616,7 +1628,10 @@ crontab -e
    - Editor de nuevo comentario con checkbox "Nota interna" (solo visible para agents y superiores).
    - Panel lateral con metadata: estado, asignado, solicitante, fechas, progreso de SLA.
    - Botones de acción contextuales según rol y estado actual: "Asignar", "En Proceso", "Escalar", "Resolver", "Cerrar", "Reabrir".
+   - **Asignación por supervisores**: los supervisores pueden reasignar tickets de áreas donde son managers o miembros. La lógica `canAssign` verifica esto consultando los endpoints `/areas` y `/areas/{id}/members`.
 4. Crear modal/página de creación `/tickets/new` con formulario completo: selects de categoría y prioridad, título, descripción (rich text básico), área, zona de adjuntos con drag & drop.
+   - **Área obligatoria si no hay agente asignado**: si el campo "Asignar a" está vacío, el campo "Área" es requerido para que el supervisor del área pueda reasignarlo.
+   - **Auto-completar área**: al seleccionar un agente, si el área está vacía se rellena automáticamente con el `primary_area_id` del agente seleccionado.
 5. Todos los cambios de estado del ticket deben actualizar la UI optimísticamente y sincronizar con el servidor.
 
 **Criterio de aceptación:** Crear un ticket end-to-end desde el frontend y verlo aparecer en tiempo real en el listado. El badge de SLA cambia de color según el estado.
@@ -1725,17 +1740,44 @@ crontab -e
 
 ## Resumen de Fases y Estimación
 
-| Fase | Descripción | Semanas | Tareas |
-|---|---|---|---|
-| 1 | Fundación | 1–2 | 1.1, 1.2, 1.3 |
-| 2 | Core de Tickets | 3–4 | 2.1, 2.2, 2.3 |
-| 3 | Notificaciones y Tiempo Real | 5 | 3.1 |
-| 4 | Funcionalidades Avanzadas | 6–7 | 4.1, 4.2, 4.3 |
-| 5 | Frontend Completo | 8–9 | 5.1, 5.2, 5.3 |
-| 6 | Multi-Tenant y Onboarding | 10 | 6.1 |
-| 7 | Calidad y Despliegue | 11 | 7.1, 7.2 |
+| Fase | Descripción | Semanas | Tareas | Estado |
+|---|---|---|---|---|
+| 1 | Fundación | 1–2 | 1.1, 1.2, 1.3 | ✅ Completada |
+| 2 | Core de Tickets | 3–4 | 2.1, 2.2, 2.3 | ✅ Completada |
+| 3 | Notificaciones y Tiempo Real | 5 | 3.1 | ✅ Completada |
+| 4 | Funcionalidades Avanzadas | 6–7 | 4.1, 4.2, 4.3 | ✅ Completada |
+| 5 | Frontend Completo | 8–9 | 5.1, 5.2, 5.3 | ✅ Completada |
+| 6 | Multi-Tenant y Onboarding | 10 | 6.1 | ✅ Completada |
+| 7 | Calidad y Despliegue | 11 | 7.1, 7.2 | 🔲 Pendiente |
 
 **Total estimado:** 11 semanas · ~15 tareas principales
+
+---
+
+## Mejoras Implementadas Post-Fase 6
+
+Las siguientes mejoras fueron implementadas tras completar las fases principales:
+
+### Notificaciones fuera de horario hábil
+- **Migration `002`**: columnas `scheduled_for` y `email_sent_at` en la tabla `notifications`.
+- `notification_service.py` verifica `is_within_business_hours` antes de enviar cada correo. Si está fuera de horario, guarda `scheduled_for = next_business_start(...)`.
+- Nueva tarea Celery `send_scheduled_notifications` (cada 5 min) en `notification_tasks.py`: busca notificaciones con `scheduled_for <= NOW()` y `email_sent_at IS NULL` y despacha los correos pendientes.
+
+### Dashboard — filtro de agentes por área para supervisores
+- El endpoint `GET /dashboard/agent-performance` ahora scoping el resultado: los supervisores solo ven métricas de agentes que pertenecen a sus áreas (como manager o como miembro).
+- `DashboardRepository.get_agent_performance` acepta parámetro opcional `area_ids`.
+
+### Archivado de usuario — reasignación inteligente
+- Al archivar un usuario vía `POST /users/{id}/archive`, sus tickets abiertos se reasignan automáticamente:
+  1. Al `manager_id` del área del ticket (si existe).
+  2. Al primer supervisor activo del área (fallback).
+  3. A `null` si no hay ninguno disponible.
+- Cada reasignación queda registrada en `ticket_history` con `reason: "agent_archived"` y se notifica al nuevo asignado.
+- `GET /users` incluye `primary_area_id` en cada usuario de la respuesta.
+
+### Frontend — mejoras de asignación
+- **CreateTicketForm**: área es obligatoria si no se selecciona agente. Al seleccionar un agente se auto-rellena el área con su `primary_area_id`.
+- **TicketDetail**: supervisores pueden asignar/reasignar tickets de áreas donde son managers o miembros activos.
 
 ---
 

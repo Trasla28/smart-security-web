@@ -16,11 +16,13 @@ import {
   useTicketAttachments,
   useAddComment,
   useChangeStatus,
+  useAssignTicket,
   useResolveTicket,
   useCloseTicket,
   useReopenTicket,
   ticketKeys,
 } from "@/hooks/useTickets";
+import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { TicketStatus } from "@/types/ticket";
@@ -45,6 +47,7 @@ interface TicketDetailProps {
 export function TicketDetail({ ticketId }: TicketDetailProps) {
   const { data: session } = useSession();
   const role = session?.user?.role ?? "requester";
+  const userId = session?.user?.id;
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"comments" | "history">("comments");
   const [commentBody, setCommentBody] = useState("");
@@ -60,8 +63,53 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   const { data: history = [] } = useTicketHistory(ticketId);
   const { data: attachments = [] } = useTicketAttachments(ticketId);
 
+  const [assigneeId, setAssigneeId] = useState<string>("");
+  const [assignError, setAssignError] = useState<string | null>(null);
+
+  const { data: usersData = [] } = useQuery({
+    queryKey: ["users-assign-picker"],
+    queryFn: async () => {
+      const res = await api.get<{ items: { id: string; full_name: string; role: string }[] }>(
+        "/users",
+        { params: { size: 100 } }
+      );
+      return (res.data.items ?? []).filter((u) => ["admin", "supervisor", "agent"].includes(u.role));
+    },
+    enabled: ["admin", "supervisor"].includes(role),
+  });
+
+  // For supervisors: fetch the ticket's area info to check if they can manage it
+  const { data: areaMembers = [] } = useQuery({
+    queryKey: ["area-members-check", ticket?.area_id],
+    queryFn: async () => {
+      const res = await api.get<{ id: string }[]>(`/areas/${ticket!.area_id}/members`);
+      return res.data;
+    },
+    enabled: role === "supervisor" && !!ticket?.area_id,
+  });
+
+  const { data: areasData = [] } = useQuery({
+    queryKey: ["areas-manager-check"],
+    queryFn: async () => {
+      const res = await api.get<{ id: string; manager_id: string | null }[]>("/areas");
+      return res.data;
+    },
+    enabled: role === "supervisor",
+  });
+
+  const canAssign = (() => {
+    if (role === "admin") return true;
+    if (role !== "supervisor") return false;
+    if (!ticket?.area_id) return false;
+    const area = areasData.find((a) => a.id === ticket.area_id);
+    const isManager = area?.manager_id === userId;
+    const isMember = areaMembers.some((m) => m.id === userId);
+    return isManager || isMember;
+  })();
+
   const addComment = useAddComment(ticketId);
   const changeStatus = useChangeStatus(ticketId);
+  const assignTicket = useAssignTicket(ticketId);
   const resolveTicket = useResolveTicket(ticketId);
   const closeTicket = useCloseTicket(ticketId);
   const reopenTicket = useReopenTicket(ticketId);
@@ -75,7 +123,6 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
     );
   }
 
-  const userId = session?.user?.id;
   const canManageWorkflow = !!userId && userId === ticket.assigned_to;
   const canConfirmOrReopen = !!userId && userId === ticket.requester_id;
   const status = ticket.status as TicketStatus;
@@ -395,7 +442,41 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
             <MetaRow icon={<MapPin className="w-4 h-4" />} label="Área">{ticket.area?.name ?? <span className="text-gray-400 text-xs">Sin área</span>}</MetaRow>
             <MetaRow icon={<Tag className="w-4 h-4" />} label="Categoría">{ticket.category?.name ?? <span className="text-gray-400 text-xs">Sin categoría</span>}</MetaRow>
             <MetaRow icon={<User className="w-4 h-4" />} label="Solicitante">{ticket.requester?.full_name ?? "—"}</MetaRow>
-            <MetaRow icon={<User className="w-4 h-4" />} label="Asignado">{ticket.assignee?.full_name ?? <span className="text-gray-400 text-xs">Sin asignar</span>}</MetaRow>
+            <MetaRow icon={<User className="w-4 h-4" />} label="Asignado">
+              {ticket.assignee?.full_name ?? <span className="text-gray-400 text-xs">Sin asignar</span>}
+            </MetaRow>
+            {canAssign && status !== "closed" && (
+              <div className="pt-1 space-y-2">
+                <p className="text-xs text-gray-500 font-medium">{ticket.assignee ? "Reasignar a" : "Asignar a"}</p>
+                <select
+                  value={assigneeId}
+                  onChange={(e) => { setAssigneeId(e.target.value); setAssignError(null); }}
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2c4e]"
+                >
+                  <option value="">Seleccionar agente...</option>
+                  {usersData.map((u) => (
+                    <option key={u.id} value={u.id}>{u.full_name}</option>
+                  ))}
+                </select>
+                {assignError && <p className="text-xs text-red-600">{assignError}</p>}
+                <button
+                  disabled={!assigneeId || assignTicket.isPending}
+                  onClick={async () => {
+                    if (!assigneeId) return;
+                    try {
+                      await assignTicket.mutateAsync(assigneeId);
+                      setAssigneeId("");
+                      setAssignError(null);
+                    } catch {
+                      setAssignError("No se pudo asignar. Verifica tus permisos.");
+                    }
+                  }}
+                  className="w-full px-3 py-1.5 bg-[#1a2c4e] text-white rounded-lg text-sm font-medium hover:bg-[#243d6a] disabled:opacity-50 transition-colors"
+                >
+                  {assignTicket.isPending ? "Asignando..." : ticket.assignee ? "Reasignar" : "Asignar"}
+                </button>
+              </div>
+            )}
             <MetaRow icon={<Calendar className="w-4 h-4" />} label="Creado">
               <span className="text-xs">{format(new Date(ticket.created_at), "d MMM yyyy, HH:mm", { locale: es })}</span>
             </MetaRow>

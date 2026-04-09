@@ -8,6 +8,7 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
         "app.tasks.email_tasks",
+        "app.tasks.notification_tasks",
         "app.tasks.recurring_tasks",
         "app.tasks.report_tasks",
         "app.tasks.sla_tasks",
@@ -32,6 +33,10 @@ celery_app.conf.update(
         "process-recurring-tickets": {
             "task": "app.tasks.recurring_tasks.process_recurring_tickets",
             "schedule": 3600.0,  # every hour
+        },
+        "send-scheduled-notifications": {
+            "task": "app.tasks.notification_tasks.send_scheduled_notifications",
+            "schedule": 300.0,  # every 5 minutes
         },
     },
 )

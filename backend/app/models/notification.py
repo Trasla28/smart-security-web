@@ -17,6 +17,8 @@ class Notification(BaseModel):
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    email_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
     ticket: Mapped["Ticket | None"] = relationship("Ticket", foreign_keys=[ticket_id])

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.area import Area
+from app.models.area import Area, UserArea
 from app.models.ticket import Ticket
 from app.models.user import User
 
@@ -288,6 +288,7 @@ class DashboardRepository:
         tenant_id: uuid.UUID,
         db: AsyncSession,
         date_range_days: int = 30,
+        area_ids: list[uuid.UUID] | None = None,
     ) -> list[dict]:
         """Per-agent metrics: volume, resolution time, SLA compliance.
 
@@ -301,7 +302,7 @@ class DashboardRepository:
         """
         period_start = datetime.now(timezone.utc) - timedelta(days=date_range_days)
 
-        result = await db.execute(
+        query = (
             select(
                 User.id.label("agent_id"),
                 User.full_name.label("agent_name"),
@@ -354,8 +355,17 @@ class DashboardRepository:
             .where(Ticket.tenant_id == tenant_id)
             .where(Ticket.deleted_at.is_(None))
             .where(Ticket.created_at >= period_start)
-            .group_by(User.id, User.full_name)
-            .order_by(func.count(Ticket.id).desc())
+        )
+
+        if area_ids:
+            query = (
+                query.join(UserArea, UserArea.user_id == User.id)
+                .where(UserArea.area_id.in_(area_ids))
+                .distinct()
+            )
+
+        result = await db.execute(
+            query.group_by(User.id, User.full_name).order_by(func.count(Ticket.id).desc())
         )
 
         agents = []

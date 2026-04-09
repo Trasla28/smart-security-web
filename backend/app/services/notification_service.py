@@ -1,11 +1,13 @@
 """Service for creating and dispatching notifications."""
 import json
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
+from app.models.tenant import TenantConfig
 from app.models.user import User
 
 # Notification types that also trigger an email
@@ -49,6 +51,31 @@ class NotificationService:
         Returns:
             The persisted Notification ORM instance.
         """
+        # Check business hours to decide whether to send email now or schedule it
+        scheduled_for: datetime | None = None
+        if notification_type in _EMAIL_TYPES:
+            cfg_result = await db.execute(
+                select(TenantConfig).where(TenantConfig.tenant_id == tenant_id)
+            )
+            config = cfg_result.scalar_one_or_none()
+            if config is not None:
+                from app.utils.business_hours import is_within_business_hours, next_business_start
+                now = datetime.now(timezone.utc)
+                if not is_within_business_hours(
+                    now,
+                    config.timezone,
+                    config.working_days,
+                    config.working_hours_start,
+                    config.working_hours_end,
+                ):
+                    scheduled_for = next_business_start(
+                        now,
+                        config.timezone,
+                        config.working_days,
+                        config.working_hours_start,
+                        config.working_hours_end,
+                    )
+
         notification = Notification(
             user_id=user_id,
             tenant_id=tenant_id,
@@ -57,6 +84,8 @@ class NotificationService:
             body=body,
             ticket_id=ticket_id,
             is_read=False,
+            scheduled_for=scheduled_for,
+            email_sent_at=None,
         )
         db.add(notification)
         await db.flush()
@@ -66,22 +95,27 @@ class NotificationService:
 
         # Enqueue email if this notification type warrants one
         if notification_type in _EMAIL_TYPES:
-            user_result = await db.execute(
-                select(User.email).where(User.id == user_id)
-            )
-            user_email: str | None = user_result.scalar_one_or_none()
-            if user_email:
-                NotificationService._enqueue_email(
-                    to=user_email,
-                    subject=title,
-                    template=notification_type,
-                    context={
-                        "title": title,
-                        "body": body,
-                        "ticket_id": str(ticket_id) if ticket_id else None,
-                        "type": notification_type,
-                    },
+            if scheduled_for is not None:
+                # Outside business hours — email will be sent by the scheduled task
+                pass
+            else:
+                user_result = await db.execute(
+                    select(User.email).where(User.id == user_id)
                 )
+                user_email: str | None = user_result.scalar_one_or_none()
+                if user_email:
+                    notification.email_sent_at = datetime.now(timezone.utc)
+                    NotificationService._enqueue_email(
+                        to=user_email,
+                        subject=title,
+                        template=notification_type,
+                        context={
+                            "title": title,
+                            "body": body,
+                            "ticket_id": str(ticket_id) if ticket_id else None,
+                            "type": notification_type,
+                        },
+                    )
 
         return notification
 
