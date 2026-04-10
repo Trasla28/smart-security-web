@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 
-export default function AzureCallbackPage() {
+function AzureCallbackContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -27,5 +27,17 @@ export default function AzureCallbackPage() {
     <div className="min-h-screen flex items-center justify-center">
       <p className="text-gray-500 text-sm">Iniciando sesión con Microsoft...</p>
     </div>
+  );
+}
+
+export default function AzureCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-gray-500 text-sm">Cargando...</p>
+      </div>
+    }>
+      <AzureCallbackContent />
+    </Suspense>
   );
 }

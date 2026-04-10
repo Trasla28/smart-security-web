@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 
-export default function AzureCallbackPage() {
+function AzureCallbackContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -57,5 +57,17 @@ export default function AzureCallbackPage() {
         <p className="text-sm text-gray-500">Verificando autenticación con Microsoft...</p>
       </div>
     </div>
+  );
+}
+
+export default function AzureCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-sm text-gray-500">Cargando...</p>
+      </div>
+    }>
+      <AzureCallbackContent />
+    </Suspense>
   );
 }
