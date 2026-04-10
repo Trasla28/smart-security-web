@@ -1,84 +1,88 @@
-version: '3.9'
-
 services:
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/certs:/etc/letsencrypt:ro
-    depends_on:
-      - backend
-      - frontend
-    restart: always
-
   backend:
-    image: ghcr.io/${REPO}/backend:production
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - storage_data:/app/storage
+    ports:
+      - "8000:8000"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - SECRET_KEY=${SECRET_KEY}
-      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
-      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
-      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - ENVIRONMENT=${ENVIRONMENT}
+      - STORAGE_PATH=${STORAGE_PATH}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_FROM=${SMTP_FROM}
-      - STORAGE_PATH=/app/storage
-      - ENVIRONMENT=production
-    volumes:
-      - storage_data:/app/storage
+      - FRONTEND_URL=${FRONTEND_URL}
+      - SUPERADMIN_API_KEY=${SUPERADMIN_API_KEY}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET:-}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
     depends_on:
-      - db
-      - redis
-    restart: always
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  frontend:
-    image: ghcr.io/${REPO}/frontend:production
-    environment:
-      - NEXTAUTH_URL=${NEXTAUTH_URL}
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-      - NEXT_PUBLIC_API_URL=${API_URL}
-      - NEXT_PUBLIC_WS_URL=${WS_URL}
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     restart: always
 
   worker:
-    image: ghcr.io/${REPO}/backend:production
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     command: celery -A app.tasks.celery_app worker --loglevel=info
+    volumes:
+      - storage_data:/app/storage
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - SECRET_KEY=${SECRET_KEY}
+      - ENVIRONMENT=${ENVIRONMENT}
+      - STORAGE_PATH=${STORAGE_PATH}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_FROM=${SMTP_FROM}
-      - STORAGE_PATH=/app/storage
-    volumes:
-      - storage_data:/app/storage
     depends_on:
       - db
       - redis
     restart: always
 
   beat:
-    image: ghcr.io/${REPO}/backend:production
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     command: celery -A app.tasks.celery_app beat --loglevel=info
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - ENVIRONMENT=${ENVIRONMENT}
+      - STORAGE_PATH=${STORAGE_PATH}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_FROM=${SMTP_FROM}
     depends_on:
       - redis
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
+      - API_URL=${API_URL}
+    depends_on:
+      - backend
     restart: always
 
   db:
@@ -91,7 +95,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -102,25 +106,13 @@ services:
       - redis_data:/data
     restart: always
 
-  backup:
-    image: postgres:16-alpine
-    environment:
-      - PGPASSWORD=${POSTGRES_PASSWORD}
-    volumes:
-      - backup_data:/backups
-    entrypoint: /bin/sh -c
-    command: >
-      "while true; do
-        pg_dump -h db -U ${POSTGRES_USER} ${POSTGRES_DB} > /backups/backup_$$(date +%Y%m%d_%H%M%S).sql
-        find /backups -name '*.sql' -mtime +30 -delete
-        sleep 86400
-      done"
-    depends_on:
-      - db
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "8025:8025"
     restart: always
 
 volumes:
   postgres_data:
   redis_data:
   storage_data:
-  backup_data:
