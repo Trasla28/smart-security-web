@@ -74,7 +74,7 @@ async def list_users(
     tenant_id: TenantId,
     db: AsyncSession = Depends(get_db),
     page: Annotated[int, Query(ge=1)] = 1,
-    size: Annotated[int, Query(ge=1, le=100)] = 20,
+    size: Annotated[int, Query(ge=1, le=500)] = 20,
     role: str | None = None,
     is_active: bool | None = None,
     include_archived: bool = False,
