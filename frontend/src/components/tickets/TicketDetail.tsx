@@ -520,7 +520,7 @@ function AttachmentList({ attachments, compact = false }: { attachments: import(
               </div>
               {a.download_url && (
                 <a
-                  href={`http://localhost:8000${a.download_url}`}
+                  href={`${process.env.NEXT_PUBLIC_API_URL}${a.download_url}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="ml-3 flex items-center gap-1 text-xs text-[#1a2c4e] font-medium hover:underline shrink-0"
