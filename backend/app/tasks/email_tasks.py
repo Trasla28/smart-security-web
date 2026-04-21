@@ -7,6 +7,20 @@ from app.tasks.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
+def _run_async(coro):
+    """Run an async coroutine from a synchronous Celery task, reusing the existing event loop when possible."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(asyncio.run, coro)
+                return future.result()
+        return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
+
+
 async def _mark_email_sent(notification_id: str) -> None:
     from datetime import datetime, timezone
     from sqlalchemy import select
@@ -141,7 +155,7 @@ def send_sla_warning_email(
 ) -> None:
     try:
         due_str = f" Vence: {sla_due_at[:16].replace('T', ' ')} UTC." if sla_due_at else ""
-        asyncio.run(
+        _run_async(
             _send_sla_notifications_async(
                 ticket_id=ticket_id,
                 tenant_id=tenant_id,
@@ -163,7 +177,7 @@ def send_sla_breach_email(
     ticket_number: str,
 ) -> None:
     try:
-        asyncio.run(
+        _run_async(
             _send_sla_notifications_async(
                 ticket_id=ticket_id,
                 tenant_id=tenant_id,
