@@ -1032,6 +1032,18 @@ class TicketService:
             db=db,
         )
 
+        from app.repositories.comment_repository import CommentRepository
+        await CommentRepository.create(
+            {
+                "ticket_id": ticket.id,
+                "tenant_id": tenant_id,
+                "author_id": user.id,
+                "body": f"**Ticket reabierto.** Razón: {data.reason}",
+                "is_internal": False,
+            },
+            db,
+        )
+
         ticket = await TicketRepository.get_by_id(ticket_id, tenant_id, db)
         return _to_response(ticket)
 
