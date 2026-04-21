@@ -21,6 +21,7 @@ services:
       - SMTP_USER=
       - SMTP_PASSWORD=
       - SMTP_FROM=noreply@tickets.local
+      - SMTP_TLS=false
       - FRONTEND_URL=http://localhost:3000
       - SUPERADMIN_API_KEY=dev-superadmin-key-change-in-production
       - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
@@ -50,6 +51,7 @@ services:
       - SMTP_HOST=mailhog
       - SMTP_PORT=1025
       - SMTP_FROM=noreply@tickets.local
+      - SMTP_TLS=false
     depends_on:
       - db
       - redis
@@ -71,6 +73,7 @@ services:
       - SMTP_HOST=mailhog
       - SMTP_PORT=1025
       - SMTP_FROM=noreply@tickets.local
+      - SMTP_TLS=false
     depends_on:
       - redis
     restart: unless-stopped

@@ -68,6 +68,7 @@ async def _send_scheduled_notifications_async() -> int:
                             "ticket_id": str(notif.ticket_id) if notif.ticket_id else None,
                             "type": notif.type,
                         },
+                        notification_id=str(notif.id),
                     )
                     notif.email_sent_at = now
                     count += 1

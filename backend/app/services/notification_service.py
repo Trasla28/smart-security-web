@@ -1,5 +1,6 @@
 """Service for creating and dispatching notifications."""
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.notification import Notification
 from app.models.tenant import TenantConfig
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 # Notification types that also trigger an email
 _EMAIL_TYPES = {
@@ -104,11 +107,11 @@ class NotificationService:
                 )
                 user_email: str | None = user_result.scalar_one_or_none()
                 if user_email:
-                    notification.email_sent_at = datetime.now(timezone.utc)
                     NotificationService._enqueue_email(
                         to=user_email,
                         subject=title,
                         template=notification_type,
+                        notification_id=notification.id,
                         context={
                             "title": title,
                             "body": body,
@@ -150,7 +153,13 @@ class NotificationService:
             pass
 
     @staticmethod
-    def _enqueue_email(to: str, subject: str, template: str, context: dict) -> None:
+    def _enqueue_email(
+        to: str,
+        subject: str,
+        template: str,
+        context: dict,
+        notification_id: uuid.UUID | None = None,
+    ) -> None:
         """Enqueue an email task via Celery (best-effort)."""
         try:
             from app.tasks.email_tasks import send_notification_email
@@ -160,6 +169,7 @@ class NotificationService:
                 subject=subject,
                 template=template,
                 context=context,
+                notification_id=str(notification_id) if notification_id else None,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("Failed to enqueue email to=%s template=%s: %s", to, template, exc)
