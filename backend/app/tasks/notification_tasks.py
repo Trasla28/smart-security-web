@@ -30,7 +30,7 @@ async def _send_scheduled_notifications_async() -> int:
     from sqlalchemy import select, and_
 
     from app.database import async_session_factory
-    from app.models.ticket import Ticket  # noqa: F401 – needed to resolve Notification.ticket relationship
+    import app.models  # noqa: F401 – registers all mappers before any query
     from app.models.notification import Notification
     from app.models.user import User
 

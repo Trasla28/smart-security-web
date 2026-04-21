@@ -33,11 +33,8 @@ async def _send_sla_notifications_async(
     """Find the assigned agent (and area admins as fallback) and send SLA notifications."""
     from sqlalchemy import select, and_
     from app.database import async_session_factory
-    # Import all models so SQLAlchemy can resolve relationships on Ticket
-    from app.models.ticket import Ticket  # noqa: F401
-    from app.models.category import Category  # noqa: F401
-    from app.models.area import Area  # noqa: F401
-    from app.models.sla import SLA  # noqa: F401
+    import app.models  # noqa: F401 – registers all mappers before any query
+    from app.models.ticket import Ticket
     from app.models.user import User, UserArea
     from app.services.notification_service import NotificationService
 

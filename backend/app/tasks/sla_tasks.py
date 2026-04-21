@@ -32,6 +32,7 @@ async def _check_sla_warnings_async() -> int:
     """
     from sqlalchemy import select, and_
     from app.database import async_session_factory
+    import app.models  # noqa: F401 – registers all mappers before any query
     from app.models.ticket import Ticket
 
     now = datetime.now(timezone.utc)
@@ -84,6 +85,7 @@ async def _check_sla_breaches_async() -> int:
     """
     from sqlalchemy import select, and_
     from app.database import async_session_factory
+    import app.models  # noqa: F401 – registers all mappers before any query
     from app.models.ticket import Ticket
 
     now = datetime.now(timezone.utc)
