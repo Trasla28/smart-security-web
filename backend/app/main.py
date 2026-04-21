@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.middleware.tenant import TenantMiddleware
-from app.routers import auth, tickets, users, areas, admin, dashboard, notifications, superadmin
+from app.routers import auth, tickets, users, areas, admin, dashboard, notifications, superadmin, files
 
 app = FastAPI(
     title="Smart Security Tickets API",
@@ -30,6 +30,7 @@ app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["dashboard"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["notifications"])
 app.include_router(superadmin.router, prefix="/api/v1/superadmin", tags=["superadmin"])
+app.include_router(files.router, prefix="/api/v1/files", tags=["files"])
 
 
 @app.get("/health", tags=["system"])
