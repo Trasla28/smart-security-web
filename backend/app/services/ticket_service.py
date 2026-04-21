@@ -343,6 +343,17 @@ class TicketService:
 
         from app.services.notification_service import NotificationService
 
+        # Notify requester that their ticket was created
+        await NotificationService.create_and_send(
+            user_id=requester_id,
+            tenant_id=tenant_id,
+            notification_type="ticket_created",
+            title=f"Ticket creado: #{ticket.ticket_number}",
+            db=db,
+            ticket_id=ticket.id,
+            body=f"Tu ticket '{ticket.title}' fue creado exitosamente. Te notificaremos cuando haya novedades.",
+        )
+
         # Notify assigned agent (if any)
         if ticket.assigned_to:
             await NotificationService.create_and_send(
@@ -773,28 +784,74 @@ class TicketService:
 
         ticket = await TicketRepository.get_by_id(ticket_id, tenant_id, db)
 
-        # Notify requester and assigned agent about status change
         from app.services.notification_service import NotificationService
 
-        body = f"El estado del ticket #{ticket.ticket_number} cambió a '{new_status}'."
-        notify_ids: set[uuid.UUID] = set()
-        if ticket.requester_id:
-            notify_ids.add(ticket.requester_id)
-        if ticket.assigned_to:
-            notify_ids.add(ticket.assigned_to)
-        notify_ids.discard(user.id)  # don't notify the actor
+        if new_status == "resolved":
+            # Email al requester: su ticket está resuelto, debe confirmarlo
+            if ticket.requester_id and ticket.requester_id != user.id:
+                await NotificationService.create_and_send(
+                    user_id=ticket.requester_id,
+                    tenant_id=tenant_id,
+                    notification_type="ticket_resolved",
+                    title=f"Tu ticket está resuelto: #{ticket.ticket_number}",
+                    db=db,
+                    ticket_id=ticket.id,
+                    body=f"El ticket '{ticket.title}' fue marcado como resuelto. Por favor confirma si el problema fue solucionado.",
+                )
+            # In-app al agente (sin email)
+            if ticket.assigned_to and ticket.assigned_to != user.id:
+                await NotificationService.create_and_send(
+                    user_id=ticket.assigned_to,
+                    tenant_id=tenant_id,
+                    notification_type="status_changed",
+                    title=f"Ticket resuelto: #{ticket.ticket_number}",
+                    db=db,
+                    ticket_id=ticket.id,
+                    body=f"El ticket '{ticket.title}' fue marcado como resuelto.",
+                )
 
-        notif_type = "ticket_resolved" if new_status == "resolved" else "status_changed"
-        for uid in notify_ids:
-            await NotificationService.create_and_send(
-                user_id=uid,
-                tenant_id=tenant_id,
-                notification_type=notif_type,
-                title=f"Ticket {new_status}: {ticket.title}",
-                db=db,
-                ticket_id=ticket.id,
-                body=body,
-            )
+        elif new_status == "closed":
+            # Email al agente: el ticket fue cerrado/confirmado
+            if ticket.assigned_to and ticket.assigned_to != user.id:
+                await NotificationService.create_and_send(
+                    user_id=ticket.assigned_to,
+                    tenant_id=tenant_id,
+                    notification_type="ticket_closed",
+                    title=f"Ticket cerrado: #{ticket.ticket_number}",
+                    db=db,
+                    ticket_id=ticket.id,
+                    body=f"El ticket '{ticket.title}' fue cerrado y confirmado por el solicitante.",
+                )
+            # In-app al requester (sin email)
+            if ticket.requester_id and ticket.requester_id != user.id:
+                await NotificationService.create_and_send(
+                    user_id=ticket.requester_id,
+                    tenant_id=tenant_id,
+                    notification_type="status_changed",
+                    title=f"Ticket cerrado: #{ticket.ticket_number}",
+                    db=db,
+                    ticket_id=ticket.id,
+                    body=f"El ticket '{ticket.title}' fue cerrado exitosamente.",
+                )
+
+        else:
+            # Otros cambios de estado: solo in-app, sin email
+            notify_ids: set[uuid.UUID] = set()
+            if ticket.requester_id:
+                notify_ids.add(ticket.requester_id)
+            if ticket.assigned_to:
+                notify_ids.add(ticket.assigned_to)
+            notify_ids.discard(user.id)
+            for uid in notify_ids:
+                await NotificationService.create_and_send(
+                    user_id=uid,
+                    tenant_id=tenant_id,
+                    notification_type="status_changed",
+                    title=f"Ticket actualizado: #{ticket.ticket_number}",
+                    db=db,
+                    ticket_id=ticket.id,
+                    body=f"El estado del ticket '{ticket.title}' cambió a '{new_status}'.",
+                )
 
         return _to_response(ticket)
 

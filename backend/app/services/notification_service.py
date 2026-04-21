@@ -15,14 +15,12 @@ logger = logging.getLogger(__name__)
 
 # Notification types that also trigger an email
 _EMAIL_TYPES = {
-    "ticket_created",
-    "ticket_assigned",
-    "status_changed",
-    "comment_added",
-    "sla_warning",
-    "sla_breached",
-    "ticket_resolved",
-    "ticket_mentioned",
+    "ticket_created",   # al requester cuando crea el ticket
+    "ticket_assigned",  # al agente cuando se le asigna al crear
+    "ticket_resolved",  # al requester cuando el ticket pasa a resuelto
+    "ticket_closed",    # al agente cuando el ticket se cierra tras confirmación
+    "sla_warning",      # al agente/admin cuando el SLA está por vencer
+    "sla_breached",     # al agente/admin cuando el SLA se venció
 }
 
 
