@@ -13,6 +13,7 @@ export const authOptions: AuthOptions = {
         password: { label: "Contraseña", type: "password" },
         tenant_slug: { label: "Tenant", type: "text" },
         azure_token: { label: "Azure Token", type: "text" },
+        google_token: { label: "Google Token", type: "text" },
       },
       async authorize(credentials) {
         if (!credentials) return null;
@@ -21,6 +22,8 @@ export const authOptions: AuthOptions = {
 
         if (credentials.azure_token) {
           access_token = credentials.azure_token;
+        } else if (credentials.google_token) {
+          access_token = credentials.google_token;
         } else {
           const loginRes = await fetch(`${API_URL}/api/v1/auth/login`, {
             method: "POST",

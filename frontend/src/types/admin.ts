@@ -139,10 +139,13 @@ export interface RecurringTemplate {
   area_id: string | null;
   priority: string;
   assigned_to: string | null;
+  assignee: { id: string; full_name: string; email: string } | null;
   recurrence_type: string;
   recurrence_value: number | null;
   recurrence_day: number | null;
+  recurrence_month: number | null;
   if_holiday_action: string;
+  due_days: number | null;
   is_active: boolean;
   last_run_at: string | null;
   next_run_at: string | null;

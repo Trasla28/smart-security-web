@@ -20,7 +20,10 @@ class RecurringTemplate(BaseModel):
     recurrence_type: Mapped[str] = mapped_column(String(20), nullable=False)
     recurrence_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recurrence_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    if_holiday_action: Mapped[str] = mapped_column(String(20), default="previous_business_day", nullable=False)
+    recurrence_month: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-12, para tipo yearly
+    if_holiday_action: Mapped[str] = mapped_column(String(30), default="previous_business_day", nullable=False)
+
+    due_days: Mapped[int | None] = mapped_column(Integer, nullable=True)  # días calendario para completar el ticket
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

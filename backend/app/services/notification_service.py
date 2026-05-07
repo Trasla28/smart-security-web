@@ -21,6 +21,7 @@ _EMAIL_TYPES = {
     "ticket_closed",    # al agente cuando el ticket se cierra tras confirmación
     "sla_warning",      # al agente/admin cuando el SLA está por vencer
     "sla_breached",     # al agente/admin cuando el SLA se venció
+    "comment_mention",  # al usuario etiquetado con @mención en un comentario
 }
 
 

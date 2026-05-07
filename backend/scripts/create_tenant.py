@@ -191,7 +191,7 @@ async def create_tenant(
 
             await send_email(
                 to=admin_email,
-                subject=f"Bienvenido a Smart Security Tickets — {name}",
+                subject=f"Bienvenido a Focus Flow — {name}",
                 template_name="welcome_tenant",
                 context={
                     "tenant_name": name,

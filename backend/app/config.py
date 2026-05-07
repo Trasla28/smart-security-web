@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     AZURE_CLIENT_SECRET: str = ""
     AZURE_TENANT_ID: str = ""
 
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+
     # Email
     SMTP_HOST: str = "localhost"
     SMTP_PORT: int = 587

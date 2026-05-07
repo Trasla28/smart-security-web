@@ -80,6 +80,18 @@ def calculate_next_run(
             _, max_next = calendar.monthrange(yr, mo)
             candidate = date(yr, mo, min(day_num, max_next))
 
+    elif template.recurrence_type == "yearly":
+        # Runs on a specific day (recurrence_value) of a specific month (recurrence_month)
+        target_month = template.recurrence_month or 1
+        target_day = template.recurrence_value or 1
+        _, max_day = calendar.monthrange(today.year, target_month)
+        clamped_day = min(target_day, max_day)
+        candidate = date(today.year, target_month, clamped_day)
+        if candidate <= today:
+            # Schedule for next year
+            _, max_next = calendar.monthrange(today.year + 1, target_month)
+            candidate = date(today.year + 1, target_month, min(target_day, max_next))
+
     else:
         # Fallback: tomorrow
         candidate = today + timedelta(days=1)

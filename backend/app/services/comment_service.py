@@ -1,8 +1,10 @@
 """Business-logic service for ticket comment operations."""
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
@@ -11,6 +13,14 @@ from app.repositories.ticket_repository import TicketRepository
 from app.schemas.comment import CommentCreate, CommentResponse, CommentUpdate
 
 COMMENT_EDIT_WINDOW_MINUTES = 5
+
+# Matches @[Full Name](uuid) mention markers embedded in comment bodies
+_MENTION_RE = re.compile(r"@\[([^\]]+)\]\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)")
+
+
+def _extract_mention_ids(body: str) -> list[uuid.UUID]:
+    """Return unique user UUIDs found in @[Name](uuid) mention markers."""
+    return list({uuid.UUID(m[1]) for m in _MENTION_RE.findall(body)})
 
 
 class CommentService:
@@ -78,16 +88,17 @@ class CommentService:
         # Reload with author
         comment = await CommentRepository.get_by_id(comment.id, ticket_id, tenant_id, db)
 
-        # Notify relevant parties (skip internal comments for requesters)
-        if not data.is_internal:
-            from app.services.notification_service import NotificationService
+        from app.services.notification_service import NotificationService
 
+        # Notify requester and assignee (public comments only)
+        comment_notified: set[uuid.UUID] = set()
+        if not data.is_internal:
             notify_ids: set[uuid.UUID] = set()
             if ticket.requester_id:
                 notify_ids.add(ticket.requester_id)
             if ticket.assigned_to:
                 notify_ids.add(ticket.assigned_to)
-            notify_ids.discard(author_id)  # don't notify the commenter
+            notify_ids.discard(author_id)
 
             for uid in notify_ids:
                 await NotificationService.create_and_send(
@@ -99,6 +110,33 @@ class CommentService:
                     ticket_id=ticket_id,
                     body=data.body[:200] if data.body else None,
                 )
+                comment_notified.add(uid)
+
+        # Notify mentioned users (@[Name](uuid) markers in the body)
+        if data.body:
+            mention_ids = _extract_mention_ids(data.body)
+            if mention_ids:
+                valid_result = await db.execute(
+                    select(User.id).where(
+                        User.id.in_(mention_ids),
+                        User.tenant_id == tenant_id,
+                        User.is_active.is_(True),
+                        User.is_archived.is_(False),
+                    )
+                )
+                valid_ids = set(valid_result.scalars().all())
+                for uid in valid_ids:
+                    if uid == author_id or uid in comment_notified:
+                        continue
+                    await NotificationService.create_and_send(
+                        user_id=uid,
+                        tenant_id=tenant_id,
+                        notification_type="comment_mention",
+                        title=f"Te mencionaron en el ticket #{ticket.ticket_number}",
+                        db=db,
+                        ticket_id=ticket_id,
+                        body=data.body[:200],
+                    )
 
         return CommentResponse.model_validate(comment)
 

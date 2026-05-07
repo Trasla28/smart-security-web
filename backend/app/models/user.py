@@ -15,6 +15,7 @@ class User(BaseModel):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     azure_oid: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_sub: Mapped[str | None] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="requester")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

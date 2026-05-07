@@ -9,6 +9,7 @@ import { Lock, MessageSquare, Clock, User, Tag, MapPin, Calendar, AlertTriangle,
 import { StatusBadge } from "./StatusBadge";
 import { PriorityBadge } from "./PriorityBadge";
 import { SLAIndicator } from "./SLAIndicator";
+import { MentionTextarea, renderMentions, buildFullBody, type MentionEntry } from "./MentionTextarea";
 import {
   useTicket,
   useTicketComments,
@@ -51,6 +52,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"comments" | "history">("comments");
   const [commentBody, setCommentBody] = useState("");
+  const [commentMentions, setCommentMentions] = useState<MentionEntry[]>([]);
   const [isInternal, setIsInternal] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
   const [showReopenInput, setShowReopenInput] = useState(false);
@@ -76,6 +78,18 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
       return (res.data.items ?? []).filter((u) => ["admin", "supervisor", "agent"].includes(u.role));
     },
     enabled: ["admin", "supervisor"].includes(role),
+  });
+
+  // Usuarios disponibles para @menciones en comentarios (todos los roles pueden etiquetar)
+  const { data: mentionableUsers = [] } = useQuery({
+    queryKey: ["users-mentionable"],
+    queryFn: async () => {
+      const res = await api.get<{ items: { id: string; full_name: string }[] }>(
+        "/users",
+        { params: { size: 500 } }
+      );
+      return res.data.items ?? [];
+    },
   });
 
   // For supervisors: fetch the ticket's area info to check if they can manage it
@@ -164,7 +178,9 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
   async function handleSubmitComment(e: React.FormEvent) {
     e.preventDefault();
     if (!commentBody.trim() && commentFiles.length === 0) return;
-    const comment = await addComment.mutateAsync({ body: commentBody, is_internal: isInternal });
+    // Reconstruye el body con el formato @[Nombre](uuid) para el backend
+    const fullBody = buildFullBody(commentBody, commentMentions);
+    const comment = await addComment.mutateAsync({ body: fullBody, is_internal: isInternal });
     if (commentFiles.length > 0) {
       for (const file of commentFiles) {
         const form = new FormData();
@@ -177,6 +193,7 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
       qc.invalidateQueries({ queryKey: ticketKeys.attachments(ticketId) });
     }
     setCommentBody("");
+    setCommentMentions([]);
     setIsInternal(false);
     setCommentFiles([]);
     setFileError(null);
@@ -338,7 +355,11 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                             </span>
                           </div>
                         </div>
-                        {c.body && <p className="text-gray-700 whitespace-pre-wrap">{c.body}</p>}
+                        {c.body && (
+                          <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                            {renderMentions(c.body)}
+                          </p>
+                        )}
                         {commentAttachments.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-gray-200">
                             <AttachmentList attachments={commentAttachments} compact />
@@ -351,13 +372,15 @@ export function TicketDetail({ ticketId }: TicketDetailProps) {
                   {/* Add comment form */}
                   {status !== "closed" && (
                     <form onSubmit={handleSubmitComment} className="pt-2 space-y-2">
-                      <textarea
+                      <MentionTextarea
                         value={commentBody}
-                        onChange={(e) => setCommentBody(e.target.value)}
+                        onChange={setCommentBody}
+                        onMentionInsert={(m) => setCommentMentions((prev) => [...prev, m])}
+                        users={mentionableUsers}
                         onPaste={handleCommentPaste}
                         rows={3}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#1a2c4e]"
-                        placeholder="Escribe un comentario... (puedes pegar imágenes directamente)"
+                        placeholder="Escribe un comentario... Usa @ para etiquetar personas"
                       />
 
                       {/* Files selected for this comment */}

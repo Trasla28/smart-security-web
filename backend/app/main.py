@@ -6,7 +6,7 @@ from app.middleware.tenant import TenantMiddleware
 from app.routers import auth, tickets, users, areas, admin, dashboard, notifications, superadmin, files
 
 app = FastAPI(
-    title="Smart Security Tickets API",
+    title="Focus Flow API",
     version="1.0.0",
     docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
     redoc_url="/redoc" if settings.ENVIRONMENT != "production" else None,

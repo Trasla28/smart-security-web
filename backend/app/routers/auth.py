@@ -200,6 +200,118 @@ async def get_me(current_user: CurrentUser) -> User:
     return current_user
 
 
+@router.get("/login/google")
+async def google_login(tenant_slug: str = "smart-security") -> dict:
+    """Return the Google OAuth2 authorization URL."""
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=400, detail="Google OAuth not configured")
+
+    from urllib.parse import urlencode
+    params = {
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "redirect_uri": f"{settings.API_BASE_URL}/api/v1/auth/callback/google",
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": tenant_slug,
+        "access_type": "offline",
+        "prompt": "select_account",
+    }
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+    return {"auth_url": auth_url}
+
+
+@router.get("/callback/google")
+async def google_callback(
+    code: str,
+    state: str,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    """Handle Google OAuth2 callback."""
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=400, detail="Google OAuth not configured")
+
+    import httpx
+    async with httpx.AsyncClient() as client:
+        token_res = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
+                "client_id": settings.GOOGLE_CLIENT_ID,
+                "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                "redirect_uri": f"{settings.API_BASE_URL}/api/v1/auth/callback/google",
+                "grant_type": "authorization_code",
+            },
+        )
+    if token_res.status_code != 200:
+        raise HTTPException(status_code=400, detail="Google token exchange failed")
+    google_access_token = token_res.json().get("access_token")
+
+    async with httpx.AsyncClient() as client:
+        info_res = await client.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {google_access_token}"},
+        )
+    if info_res.status_code != 200:
+        raise HTTPException(status_code=400, detail="Could not fetch user info from Google")
+
+    google_user = info_res.json()
+    google_sub = google_user.get("sub")
+    email = google_user.get("email", "").lower()
+    full_name = google_user.get("name") or email
+
+    if not google_sub or not email:
+        raise HTTPException(status_code=400, detail="Could not extract user info from Google token")
+
+    tenant_slug = state
+    tenant_result = await db.execute(
+        select(Tenant).where(Tenant.slug == tenant_slug).where(Tenant.is_active.is_(True))
+    )
+    tenant = tenant_result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    user_result = await db.execute(
+        select(User)
+        .where(User.tenant_id == tenant.id)
+        .where(User.deleted_at.is_(None))
+        .where((User.google_sub == google_sub) | (User.email == email))
+    )
+    user = user_result.scalar_one_or_none()
+
+    if not user:
+        user = User(
+            tenant_id=tenant.id,
+            email=email,
+            full_name=full_name,
+            google_sub=google_sub,
+            role="requester",
+        )
+        db.add(user)
+        await db.flush()
+    elif not user.google_sub:
+        user.google_sub = google_sub
+
+    if not user.is_active or user.is_archived:
+        raise HTTPException(status_code=403, detail="Account is not active")
+
+    await db.execute(
+        update(User).where(User.id == user.id).values(last_login_at=datetime.now(timezone.utc))
+    )
+    await db.commit()
+
+    access_token = create_access_token(user.id, tenant.id, user.role)
+    refresh_token_str, jti = create_refresh_token(user.id, tenant.id)
+    _store_refresh_token(user.id, jti)
+    _set_refresh_cookie(response, refresh_token_str)
+
+    if settings.FRONTEND_URL:
+        redirect_url = f"{settings.FRONTEND_URL}/google-callback?token={access_token}"
+        return RedirectResponse(url=redirect_url, status_code=302)
+
+    return TokenResponse(access_token=access_token)
+
+
 @router.get("/login/azure")
 async def azure_login() -> dict:
     """Return the Azure AD authorization URL."""

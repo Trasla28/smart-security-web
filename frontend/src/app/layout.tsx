@@ -3,8 +3,8 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "Tickets — Smart Security",
-  description: "Sistema de gestión de tickets",
+  title: "Focus Flow",
+  description: "Focus Flow — Sistema de gestión de solicitudes",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

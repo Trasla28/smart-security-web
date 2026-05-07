@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import CurrentUser, TenantId, require_role
@@ -283,6 +284,7 @@ async def list_recurring_templates(
     """List all recurring ticket templates for the tenant."""
     query = (
         select(RecurringTemplate)
+        .options(selectinload(RecurringTemplate.assignee))
         .where(RecurringTemplate.tenant_id == tenant_id)
         .order_by(RecurringTemplate.title)
     )
@@ -329,7 +331,9 @@ async def create_recurring_template(
         recurrence_type=data.recurrence_type,
         recurrence_value=data.recurrence_value,
         recurrence_day=data.recurrence_day,
+        recurrence_month=data.recurrence_month,
         if_holiday_action=data.if_holiday_action,
+        due_days=data.due_days,
         is_active=True,
         created_by=current_user.id,
     )
@@ -342,8 +346,13 @@ async def create_recurring_template(
     )
 
     await db.commit()
-    await db.refresh(template)
-    return RecurringTemplateResponse.model_validate(template)
+    # Reload with assignee relationship
+    result2 = await db.execute(
+        select(RecurringTemplate)
+        .options(selectinload(RecurringTemplate.assignee))
+        .where(RecurringTemplate.id == template.id)
+    )
+    return RecurringTemplateResponse.model_validate(result2.scalar_one())
 
 
 @router.patch("/recurring/{template_id}", response_model=RecurringTemplateResponse, dependencies=_ADMIN_DEP)
@@ -369,10 +378,8 @@ async def update_recurring_template(
             status_code=status.HTTP_404_NOT_FOUND, detail="Recurring template not found"
         )
 
-    changed_schedule = any(
-        f in data.model_dump(exclude_unset=True)
-        for f in ("recurrence_type", "recurrence_value", "recurrence_day", "if_holiday_action")
-    )
+    _SCHEDULE_FIELDS = {"recurrence_type", "recurrence_value", "recurrence_day", "recurrence_month", "if_holiday_action"}
+    changed_schedule = bool(_SCHEDULE_FIELDS & data.model_dump(exclude_unset=True).keys())
 
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(template, field, value)
@@ -392,8 +399,13 @@ async def update_recurring_template(
         )
 
     await db.commit()
-    await db.refresh(template)
-    return RecurringTemplateResponse.model_validate(template)
+    # Reload with assignee relationship
+    result2 = await db.execute(
+        select(RecurringTemplate)
+        .options(selectinload(RecurringTemplate.assignee))
+        .where(RecurringTemplate.id == template.id)
+    )
+    return RecurringTemplateResponse.model_validate(result2.scalar_one())
 
 
 @router.delete(

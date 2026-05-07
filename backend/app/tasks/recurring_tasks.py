@@ -98,7 +98,11 @@ async def _process_recurring_tickets_async() -> int:
                 sla = sla_result.scalars().first()
 
                 sla_due_at = None
-                if sla and config:
+                if template.due_days:
+                    # Vencimiento fijo: N días calendario desde la creación
+                    from datetime import timedelta
+                    sla_due_at = now + timedelta(days=template.due_days)
+                elif sla and config:
                     sla_due_at = calculate_due_date(
                         start=now,
                         hours=sla.resolution_hours,

@@ -55,8 +55,8 @@ export function Sidebar() {
   return (
     <aside className="fixed inset-y-0 left-0 w-60 bg-[#1a2c4e] flex flex-col z-40">
       <div className="px-5 py-5 border-b border-white/10">
-        <span className="text-white font-bold text-lg tracking-tight">SS Tickets</span>
-        <p className="text-white/50 text-xs mt-0.5">Smart Security</p>
+        <span className="text-white font-bold text-lg tracking-tight">Focus Flow</span>
+        <p className="text-white/50 text-xs mt-0.5">Focus Flow</p>
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">

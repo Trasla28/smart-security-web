@@ -208,6 +208,14 @@ class TenantConfigResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class RecurringAssigneeInfo(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    full_name: str
+    email: str
+
+
 class RecurringTemplateCreate(BaseModel):
     title: str = Field(..., min_length=3, max_length=500)
     description: str | None = None
@@ -215,13 +223,15 @@ class RecurringTemplateCreate(BaseModel):
     area_id: uuid.UUID | None = None
     priority: str = Field("medium", pattern="^(low|medium|high|urgent)$")
     assigned_to: uuid.UUID | None = None
-    recurrence_type: str = Field(..., pattern="^(daily|weekly|monthly|day_of_month)$")
+    recurrence_type: str = Field(..., pattern="^(daily|weekly|monthly|day_of_month|yearly)$")
     recurrence_value: int | None = Field(None, ge=1, le=31)
     recurrence_day: int | None = Field(None, ge=0, le=6)
+    recurrence_month: int | None = Field(None, ge=1, le=12)
     if_holiday_action: str = Field(
         "previous_business_day",
         pattern="^(previous_business_day|next_business_day|same_day)$",
     )
+    due_days: int | None = Field(None, ge=1, le=365)
 
 
 class RecurringTemplateUpdate(BaseModel):
@@ -231,13 +241,15 @@ class RecurringTemplateUpdate(BaseModel):
     area_id: uuid.UUID | None = None
     priority: str | None = Field(None, pattern="^(low|medium|high|urgent)$")
     assigned_to: uuid.UUID | None = None
-    recurrence_type: str | None = Field(None, pattern="^(daily|weekly|monthly|day_of_month)$")
+    recurrence_type: str | None = Field(None, pattern="^(daily|weekly|monthly|day_of_month|yearly)$")
     recurrence_value: int | None = Field(None, ge=1, le=31)
     recurrence_day: int | None = Field(None, ge=0, le=6)
+    recurrence_month: int | None = Field(None, ge=1, le=12)
     if_holiday_action: str | None = Field(
         None,
         pattern="^(previous_business_day|next_business_day|same_day)$",
     )
+    due_days: int | None = Field(None, ge=1, le=365)
     is_active: bool | None = None
 
 
@@ -252,10 +264,13 @@ class RecurringTemplateResponse(BaseModel):
     area_id: uuid.UUID | None = None
     priority: str
     assigned_to: uuid.UUID | None = None
+    assignee: RecurringAssigneeInfo | None = None
     recurrence_type: str
     recurrence_value: int | None = None
     recurrence_day: int | None = None
+    recurrence_month: int | None = None
     if_holiday_action: str
+    due_days: int | None = None
     is_active: bool
     last_run_at: datetime | None = None
     next_run_at: datetime | None = None
