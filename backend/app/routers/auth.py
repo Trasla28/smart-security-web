@@ -244,6 +244,8 @@ async def google_callback(
             },
         )
     if token_res.status_code != 200:
+        if settings.FRONTEND_URL:
+            return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=google_auth_failed", status_code=302)
         raise HTTPException(status_code=400, detail="Google token exchange failed")
     google_access_token = token_res.json().get("access_token")
 
@@ -253,6 +255,8 @@ async def google_callback(
             headers={"Authorization": f"Bearer {google_access_token}"},
         )
     if info_res.status_code != 200:
+        if settings.FRONTEND_URL:
+            return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=google_auth_failed", status_code=302)
         raise HTTPException(status_code=400, detail="Could not fetch user info from Google")
 
     google_user = info_res.json()
@@ -354,7 +358,11 @@ async def azure_callback(
     )
 
     if "error" in result:
-        raise HTTPException(status_code=400, detail=result.get("error_description", "Azure auth failed"))
+        error_desc = result.get("error_description", "")
+        if settings.FRONTEND_URL:
+            code = "microsoft_code_expired" if "AADSTS54005" in error_desc else "microsoft_auth_failed"
+            return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={code}", status_code=302)
+        raise HTTPException(status_code=400, detail=error_desc or "Azure auth failed")
 
     claims = result.get("id_token_claims", {})
     azure_oid = claims.get("oid")

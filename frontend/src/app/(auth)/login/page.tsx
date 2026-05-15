@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const schema = z.object({
   email: z.string().email("Email inválido"),
@@ -15,9 +15,19 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
+const AUTH_ERRORS: Record<string, string> = {
+  microsoft_code_expired: "El enlace de Microsoft expiró o ya fue usado. Por favor intenta de nuevo.",
+  microsoft_auth_failed: "Error al autenticar con Microsoft. Por favor intenta de nuevo.",
+  google_auth_failed: "Error al autenticar con Google. Por favor intenta de nuevo.",
+};
+
 export default function LoginPage() {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const urlError = searchParams.get("error");
+  const [error, setError] = useState<string | null>(
+    urlError ? (AUTH_ERRORS[urlError] ?? "Error de autenticación. Por favor intenta de nuevo.") : null
+  );
   const [azureLoading, setAzureLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
