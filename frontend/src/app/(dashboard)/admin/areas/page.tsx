@@ -20,6 +20,34 @@ const areaSchema = z.object({
   manager_id: z.string().optional(),
 });
 
+function getApiError(error: unknown): string {
+  const data = (error as any)?.response?.data;
+  if (!data) return "Error inesperado. Intenta nuevamente.";
+
+  // FastAPI validation error (422) — detail is an array of field errors
+  if (Array.isArray(data.detail)) {
+    const msgs: string[] = data.detail.map((e: any) => {
+      const field = Array.isArray(e.loc) ? e.loc[e.loc.length - 1] : "";
+      if (field === "manager_id") return "El encargado seleccionado no es válido.";
+      if (field === "name") return "El nombre del área no es válido.";
+      return e.msg ?? "Error de validación.";
+    });
+    return msgs.join(" ");
+  }
+
+  // String detail (409 conflict, 404, etc.)
+  if (typeof data.detail === "string") {
+    const d = data.detail;
+    if (d.includes("already exists")) return "Ya existe un área con ese nombre.";
+    if (d.includes("already a member")) return "Uno de los usuarios ya es miembro del área.";
+    if (d === "User not found") return "Usuario no encontrado.";
+    if (d === "Area not found") return "Área no encontrada.";
+    return d;
+  }
+
+  return "Error inesperado. Intenta nuevamente.";
+}
+
 type AreaForm = z.infer<typeof areaSchema>;
 
 const inputClass =
@@ -267,7 +295,8 @@ export default function AdminAreasPage() {
   // --- Create ---
   const createMutation = useMutation({
     mutationFn: async (d: AreaForm) => {
-      const area: Area = await api.post("/areas", d).then((r) => r.data);
+      const payload = { ...d, manager_id: d.manager_id || null };
+      const area: Area = await api.post("/areas", payload).then((r) => r.data);
       await Promise.all(
         createMemberIds.map((uid) =>
           api.post(`/areas/${area.id}/members`, { user_id: uid, is_primary: false })
@@ -286,7 +315,8 @@ export default function AdminAreasPage() {
   // --- Edit ---
   const editMutation = useMutation({
     mutationFn: async ({ id, managerId, ...d }: AreaForm & { id: string; managerId: string }) => {
-      await api.patch(`/areas/${id}`, d);
+      const payload = { ...d, manager_id: d.manager_id || null };
+      await api.patch(`/areas/${id}`, payload);
       const currentRes = await api.get<AreaMember[]>(`/areas/${id}/members`);
       const currentTeamIds = currentRes.data
         .filter((m) => m.id !== managerId)
@@ -364,7 +394,7 @@ export default function AdminAreasPage() {
                   />
                 </div>
                 {createMutation.isError && (
-                  <p className="text-xs text-red-500">Error al crear área. Intenta nuevamente.</p>
+                  <p className="text-xs text-red-500">{getApiError(createMutation.error)}</p>
                 )}
                 <div className="flex gap-2 pt-2">
                   <button
@@ -496,7 +526,7 @@ export default function AdminAreasPage() {
                 )}
               </div>
               {editMutation.isError && (
-                <p className="text-xs text-red-500">Error al guardar cambios. Intenta nuevamente.</p>
+                <p className="text-xs text-red-500">{getApiError(editMutation.error)}</p>
               )}
               <div className="flex gap-2 pt-2">
                 <button

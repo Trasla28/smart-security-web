@@ -6,7 +6,7 @@ import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Plus, Edit2, X, User, Calendar, Clock } from "lucide-react";
+import { Plus, Edit2, X, User, Calendar, Clock, Search } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import api from "@/lib/api";
@@ -300,6 +300,8 @@ export default function AdminRecurringPage() {
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editTemplate, setEditTemplate] = useState<RecurringTemplate | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
 
   const { data: templates = [], isLoading } = useQuery({
     queryKey: ["admin-recurring"],
@@ -405,6 +407,19 @@ export default function AdminRecurringPage() {
 
   const formProps = { agents, areas, categories };
 
+  const q = search.toLowerCase();
+  const filtered = templates.filter((t) => {
+    const matchesSearch =
+      q === "" ||
+      t.title.toLowerCase().includes(q) ||
+      (t.assignee?.full_name ?? "").toLowerCase().includes(q);
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "active" && t.is_active) ||
+      (statusFilter === "inactive" && !t.is_active);
+    return matchesSearch && matchesStatus;
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -445,6 +460,34 @@ export default function AdminRecurringPage() {
         </Dialog.Root>
       </div>
 
+      {/* Filtros */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Buscar por título o responsable..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2c4e]"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2c4e] bg-white"
+        >
+          <option value="all">Todas</option>
+          <option value="active">Activas</option>
+          <option value="inactive">Inactivas</option>
+        </select>
+        {(search || statusFilter !== "all") && (
+          <span className="text-xs text-gray-500">
+            {filtered.length} de {templates.length} plantilla{templates.length !== 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+
       {/* Tabla */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {isLoading ? (
@@ -453,8 +496,12 @@ export default function AdminRecurringPage() {
               <div key={i} className="h-10 bg-gray-100 rounded animate-pulse" />
             ))}
           </div>
-        ) : templates.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-10">No hay plantillas recurrentes.</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-10">
+            {templates.length === 0
+              ? "No hay plantillas recurrentes."
+              : "Ninguna plantilla coincide con los filtros."}
+          </p>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
@@ -469,7 +516,7 @@ export default function AdminRecurringPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {templates.map((t) => (
+              {filtered.map((t) => (
                 <tr key={t.id} className="hover:bg-gray-50">
                   <td className="px-5 py-3">
                     <p className="font-medium text-gray-900">{t.title}</p>

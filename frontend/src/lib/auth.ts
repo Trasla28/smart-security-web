@@ -57,12 +57,16 @@ export const authOptions: AuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.access_token = user.access_token;
         token.role = user.role;
         token.tenant_id = user.tenant_id;
         token.user_id = user.id;
+      }
+      // Allow the client-side refresh interceptor to push a new access_token
+      if (trigger === "update" && session?.access_token) {
+        token.access_token = session.access_token;
       }
       return token;
     },

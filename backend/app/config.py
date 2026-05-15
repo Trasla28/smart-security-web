@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     SUPERADMIN_API_KEY: str = ""
 
     # JWT
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours — covers a full workday
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30     # 30 days — stay logged in across weeks
 
     # Celery
     CELERY_BROKER_URL: str = ""

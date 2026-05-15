@@ -175,8 +175,12 @@ async def list_area_members(
     tenant_id: TenantId,
     db: AsyncSession = Depends(get_db),
 ) -> list[AreaMemberResponse]:
-    """Return the list of users belonging to an area."""
-    await _get_area_or_404(area_id, tenant_id, db)
+    """Return the list of users belonging to an area.
+
+    Always includes the area manager even if they have no UserArea record,
+    so the frontend can display them under the 'Responsable' section.
+    """
+    area = await _get_area_or_404(area_id, tenant_id, db)
 
     result = await db.execute(
         select(User, UserArea.is_primary)
@@ -187,8 +191,10 @@ async def list_area_members(
         .order_by(User.full_name)
     )
 
+    seen_ids: set[uuid.UUID] = set()
     members = []
     for user, is_primary in result.all():
+        seen_ids.add(user.id)
         members.append(
             AreaMemberResponse(
                 id=user.id,
@@ -198,6 +204,27 @@ async def list_area_members(
                 is_primary=is_primary,
             )
         )
+
+    # If the manager is not already in the team list, append them explicitly
+    if area.manager_id and area.manager_id not in seen_ids:
+        manager_result = await db.execute(
+            select(User)
+            .where(User.id == area.manager_id)
+            .where(User.tenant_id == tenant_id)
+            .where(User.deleted_at.is_(None))
+        )
+        manager_user = manager_result.scalar_one_or_none()
+        if manager_user:
+            members.append(
+                AreaMemberResponse(
+                    id=manager_user.id,
+                    full_name=manager_user.full_name,
+                    email=manager_user.email,
+                    role=manager_user.role,
+                    is_primary=False,
+                )
+            )
+
     return members
 
 
